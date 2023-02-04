@@ -40,7 +40,7 @@ func New(cidrs ...netip.Prefix) Tree {
 	return t
 }
 
-// NewConcurrent, convenience helper for initializing the cidrtree for large inputs.
+// NewConcurrent, convenience helper for initializing the cidrtree for large inputs (> 100_000).
 // A good value reference for jobs is the number of logical CPUs usable by the current process.
 func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 	if jobs <= 1 {
