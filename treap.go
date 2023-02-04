@@ -2,6 +2,8 @@
 //
 // This package is a specialization of the more generic [interval package] of the same author,
 // but explicit for CIDRs. It has a narrow focus with a smaller and simpler API.
+//
+// [interval package]: https://github.com/gaissmai/interval
 package cidrtree
 
 import (
