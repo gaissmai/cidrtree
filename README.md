@@ -10,10 +10,7 @@ All nodes are read-only after creation, allowing concurrent readers to operate s
 This package is a specialization of the more generic [interval package] of the same author,
 but explicit for CIDRs. It has a narrow focus with a smaller and simpler API.
 
-[package interval]: https://github.com/gaissmai/interval
-[net.netip]: https://pkg.go.dev/net/netip
-
-```
+[interval package]: https://github.com/gaissmai/interval
 
 ## API
 ```go
