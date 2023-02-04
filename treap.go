@@ -53,8 +53,8 @@ func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 	}
 
 	var wg sync.WaitGroup
-	var partialTrees chan Tree = make(chan Tree)
 	var chunk []netip.Prefix
+	partialTrees := make(chan Tree)
 
 	// fan out
 	for ; l > 0; l = len(cidrs) {
@@ -73,7 +73,6 @@ func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 			defer wg.Done()
 			partialTrees <- New(chunk...)
 		}(chunk...)
-
 	}
 
 	// wait and close chan
@@ -222,9 +221,9 @@ func (t *Tree) DeleteMutable(cidr netip.Prefix) bool {
 	n = l.join(r, false)
 
 	if is4 {
-		(*t).root4 = n
+		t.root4 = n
 	} else {
-		(*t).root6 = n
+		t.root6 = n
 	}
 
 	return m != nil
@@ -446,18 +445,18 @@ func (n *node) join(m *node, immutable bool) *node {
 		n.right = n.right.join(m, immutable)
 		n.recalc() // n has changed, recalc
 		return n
-	} else {
-		//            m
-		//      n    l r
-		//     l r
-		//
-		if immutable {
-			m = m.copyNode()
-		}
-		m.left = n.join(m.left, immutable)
-		m.recalc() // m has changed, recalc
-		return m
 	}
+	//
+	//            m
+	//      n    l r
+	//     l r
+	//
+	if immutable {
+		m = m.copyNode()
+	}
+	m.left = n.join(m.left, immutable)
+	m.recalc() // m has changed, recalc
+	return m
 }
 
 // ###########################################################

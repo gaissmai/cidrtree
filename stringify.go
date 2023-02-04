@@ -139,7 +139,6 @@ func (n *node) buildParentChildsMap(pcm parentChildsMap) parentChildsMap {
 func (n *node) pcmForNode(pcm parentChildsMap) parentChildsMap {
 	// if this cidr is covered by a prev cidr on stack
 	for j := len(pcm.stack) - 1; j >= 0; j-- {
-
 		that := pcm.stack[j]
 		if that.cidr.Contains(n.cidr.Addr()) {
 			// cidr in node j is parent to cidr

@@ -59,9 +59,8 @@ func sliceCIDRs(n int) []netip.Prefix {
 	}
 
 	var clone []netip.Prefix
-	for i := range internetCIDRs {
-		clone = append(clone, internetCIDRs[i])
-	}
+	clone = append(clone, internetCIDRs...)
+
 	rand.Shuffle(len(clone), func(i, j int) {
 		clone[i], clone[j] = clone[j], clone[i]
 	})
