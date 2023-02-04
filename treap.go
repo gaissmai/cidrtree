@@ -556,11 +556,13 @@ func cmpRR(a, b netip.Prefix) int {
 }
 
 // ipTooBig returns true if ip is greater than prefix last address.
+// The test must be indirect since netip has no method to get the last address of the prefix.
 func ipTooBig(ip netip.Addr, p netip.Prefix) bool {
 	if p.Contains(ip) {
 		return false
 	}
 	if ip.Compare(p.Addr()) > 0 {
+		// ... but not contained, indirect proof for tooBig
 		return true
 	}
 	return false
