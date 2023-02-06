@@ -40,8 +40,10 @@ func New(cidrs ...netip.Prefix) Tree {
 	return t
 }
 
-// NewConcurrent, convenience helper for initializing the cidrtree for large inputs (> 100_000).
-// A good value reference for jobs is the number of logical CPUs usable by the current process.
+// NewConcurrent, splits the input data into chunks, fan-out to [New] and recombine the chunk trees (mutable) with [Union].
+//
+// Convenience function for initializing the cidrtree for large inputs (> 100_000).
+// A good value reference for jobs is the number of logical CPUs [runtine.NumCPU] usable by the current process.
 func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 	if jobs <= 1 {
 		return New(cidrs...)
@@ -49,16 +51,24 @@ func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 
 	l := len(cidrs)
 
+	// define a min chunk size, don't split in too small chunks
+	const minChunkSize = 10_000
+
 	chunkSize := l/jobs + 1
-	if chunkSize < 10_000 {
-		chunkSize = 10_000
+	if chunkSize < minChunkSize {
+		chunkSize = minChunkSize
+
+		// don't use go routine and result channel for just one chunk
+		if l < chunkSize {
+			return New(cidrs...)
+		}
 	}
 
 	var wg sync.WaitGroup
 	var chunk []netip.Prefix
 	partialTrees := make(chan Tree)
 
-	// fan out
+	// fan-out
 	for ; l > 0; l = len(cidrs) {
 		// partition input into chunks
 		switch {
@@ -83,11 +93,10 @@ func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 		close(partialTrees)
 	}()
 
-	// fan in
+	// fan-in, mutable
 	var t Tree
 	for other := range partialTrees {
-		// fast union, immutable is false
-		t = t.Union(other, false)
+		t = t.Union(other, false) // immutable is false
 	}
 	return t
 }
@@ -234,9 +243,6 @@ func (t *Tree) DeleteMutable(cidr netip.Prefix) bool {
 // Union combines any two trees. Duplicates are skipped.
 //
 // The "immutable" flag controls whether the two trees are allowed to be modified.
-//
-// To create very large trees, it may be time-saving to slice the input data into chunks,
-// fan out for creation and combine the generated subtrees with non-immutable unions.
 func (t Tree) Union(other Tree, immutable bool) Tree {
 	t.root4 = t.root4.union(other.root4, immutable)
 	t.root6 = t.root6.union(other.root6, immutable)
