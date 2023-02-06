@@ -45,23 +45,18 @@ func New(cidrs ...netip.Prefix) Tree {
 // Convenience function for initializing the cidrtree for large inputs (> 100_000).
 // A good value reference for jobs is the number of logical CPUs [runtine.NumCPU] usable by the current process.
 func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
-	if jobs <= 1 {
+	// define a min chunk size, don't split in too small chunks
+	const minChunkSize = 25_000
+
+	// no fan-out for small input slice or just one job
+	l := len(cidrs)
+	if l < minChunkSize || jobs <= 1 {
 		return New(cidrs...)
 	}
-
-	l := len(cidrs)
-
-	// define a min chunk size, don't split in too small chunks
-	const minChunkSize = 10_000
 
 	chunkSize := l/jobs + 1
 	if chunkSize < minChunkSize {
 		chunkSize = minChunkSize
-
-		// don't use go routine and result channel for just one chunk
-		if l < chunkSize {
-			return New(cidrs...)
-		}
 	}
 
 	var wg sync.WaitGroup
