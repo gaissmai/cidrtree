@@ -25,8 +25,10 @@ var intMap = map[int]string{
 }
 
 // full internet prefix list, gzipped
-var prefixFile = "testdata/prefixes.txt.gz"
-var internetCIDRs = makeInternetPrefixes()
+var (
+	prefixFile    = "testdata/prefixes.txt.gz"
+	internetCIDRs = makeInternetPrefixes()
+)
 
 func makeInternetPrefixes() []netip.Prefix {
 	var cidrs []netip.Prefix
@@ -84,6 +86,19 @@ func BenchmarkNewCC(b *testing.B) {
 		b.Run(intMap[k], func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				_ = cidrtree.NewConcurrent(runtime.NumCPU(), cidrs...)
+			}
+		})
+	}
+}
+
+func BenchmarkClone(b *testing.B) {
+	for k := 1; k <= 1_000_000; k *= 10 {
+		tree := cidrtree.New(sliceCIDRs(k)...)
+		name := "Clone" + intMap[k]
+		b.Run(name, func(b *testing.B) {
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				_ = tree.Clone()
 			}
 		})
 	}
