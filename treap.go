@@ -20,8 +20,8 @@ type (
 		root6 *node
 	}
 
-	// KeyVal, CIDRs are keys and the values are typically the next-hop of the route or an array of next-hops in ECMP routing.
-	KeyVal struct {
+	// Route, CIDRs are keys and the values are typically the next-hop of the route or an array of next-hops in ECMP routing.
+	Route struct {
 		CIDR  netip.Prefix
 		Value any
 	}
@@ -39,26 +39,26 @@ type (
 	}
 )
 
-// New initializes the cidr tree with zero or more netip prefixes.
+// New initializes the cidrtree with zero or more routes.
 // Duplicate prefixes are just skipped.
-func New(items ...KeyVal) Tree {
+func New(routes ...Route) Tree {
 	var t Tree
-	t.InsertMutable(items...)
+	t.InsertMutable(routes...)
 	return t
 }
 
-// NewConcurrent, splits the input data into chunks, fan-out to [New] and recombine the chunk trees (mutable) with [Union].
+// NewConcurrent, splits the input data into chunks, fan-out to [New] and recombine the trees (mutable) with [Union].
 //
 // Convenience function for initializing the cidrtree for large inputs (> 100_000).
 // A good value reference for jobs is the number of logical CPUs [runtine.NumCPU] usable by the current process.
-func NewConcurrent(jobs int, items ...KeyVal) Tree {
+func NewConcurrent(jobs int, routes ...Route) Tree {
 	// define a min chunk size, don't split in too small chunks
 	const minChunkSize = 25_000
 
 	// no fan-out for small input slice or just one job
-	l := len(items)
+	l := len(routes)
 	if l < minChunkSize || jobs <= 1 {
-		return New(items...)
+		return New(routes...)
 	}
 
 	chunkSize := l/jobs + 1
@@ -67,28 +67,28 @@ func NewConcurrent(jobs int, items ...KeyVal) Tree {
 
 		// don't use go routine and result channel for just one chunk
 		if l < chunkSize {
-			return New(items...)
+			return New(routes...)
 		}
 	}
 
 	var wg sync.WaitGroup
-	var chunk []KeyVal
+	var chunk []Route
 	partialTrees := make(chan Tree)
 
 	// fan-out
-	for ; l > 0; l = len(items) {
+	for ; l > 0; l = len(routes) {
 		// partition input into chunks
 		switch {
 		case l > chunkSize:
-			chunk = items[:chunkSize]
-			items = items[chunkSize:]
+			chunk = routes[:chunkSize]
+			routes = routes[chunkSize:]
 		default: // rest
-			chunk = items[:l]
-			items = nil
+			chunk = routes[:l]
+			routes = nil
 		}
 
 		wg.Add(1)
-		go func(chunk ...KeyVal) {
+		go func(chunk ...Route) {
 			defer wg.Done()
 			partialTrees <- New(chunk...)
 		}(chunk...)
@@ -108,29 +108,29 @@ func NewConcurrent(jobs int, items ...KeyVal) Tree {
 	return t
 }
 
-// Insert netip prefixes into the tree, returns the new Tree.
+// Insert routes into the tree, returns the new Tree.
 // Duplicate prefixes are just skipped.
-func (t Tree) Insert(items ...KeyVal) Tree {
-	for _, item := range items {
-		if item.CIDR.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(item), true)
+func (t Tree) Insert(routes ...Route) Tree {
+	for _, route := range routes {
+		if route.CIDR.Addr().Is4() {
+			t.root4 = t.root4.insert(makeNode(route), true)
 		} else {
-			t.root6 = t.root6.insert(makeNode(item), true)
+			t.root6 = t.root6.insert(makeNode(route), true)
 		}
 	}
 
 	return t
 }
 
-// InsertMutable insert netip prefixes into the tree, changing the original tree.
+// InsertMutable insert routes into the tree, changing the original tree.
 // Duplicate prefixes are just skipped.
 // If the original tree does not need to be preserved then this is much faster than the immutable insert.
-func (t *Tree) InsertMutable(items ...KeyVal) {
-	for _, item := range items {
-		if item.CIDR.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(item), false)
+func (t *Tree) InsertMutable(routes ...Route) {
+	for _, route := range routes {
+		if route.CIDR.Addr().Is4() {
+			t.root4 = t.root4.insert(makeNode(route), false)
 		} else {
-			t.root6 = t.root6.insert(makeNode(item), false)
+			t.root6 = t.root6.insert(makeNode(route), false)
 		}
 	}
 }
@@ -479,10 +479,10 @@ func (n *node) join(m *node, immutable bool) *node {
 // ###########################################################
 
 // makeNode, create new node with cidr.
-func makeNode(item KeyVal) *node {
+func makeNode(route Route) *node {
 	n := new(node)
-	n.cidr = item.CIDR.Masked() // always store the prefix in canonical form
-	n.value = item.Value
+	n.cidr = route.CIDR.Masked() // always store the prefix in canonical form
+	n.value = route.Value
 	n.recalc() // init the augmented field with recalc
 	return n
 }

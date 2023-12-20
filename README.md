@@ -25,15 +25,15 @@ but explicit for CIDRs. It has a narrow focus with a specialized API for IP rout
 ```go
   import "github.com/gaissmai/cidrtree"
 
-  type KeyVal struct {
+  type Route struct{
       CIDR  netip.Prefix   // route
       Value any            // payload, e.g. next hop(s)
   }
 
   type Tree struct{ /* has unexported fields */ }
 
-  func New(items ...KeyVal) Tree
-  func NewConcurrent(jobs int, items ...KeyVal) Tree
+  func New(routes ...Route) Tree
+  func NewConcurrent(jobs int, routes ...Route) Tree
 
   func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool)
 
