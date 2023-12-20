@@ -20,6 +20,12 @@ type (
 		root6 *node
 	}
 
+	// KeyVal, CIDRs are keys and the values are typically the next-hop of the route or an array of next-hops in ECMP routing.
+	KeyVal struct {
+		CIDR  netip.Prefix
+		Value any
+	}
+
 	// node is the recursive data structure of the treap.
 	// The heap priority is not stored in the node, it is calculated (crc32) when needed from the prefix.
 	// The same input always produces the same binary tree since the heap priority
@@ -28,15 +34,16 @@ type (
 		maxUpper *node // augment the treap, see also recalc()
 		left     *node
 		right    *node
+		value    any
 		cidr     netip.Prefix
 	}
 )
 
 // New initializes the cidr tree with zero or more netip prefixes.
 // Duplicate prefixes are just skipped.
-func New(cidrs ...netip.Prefix) Tree {
+func New(items ...KeyVal) Tree {
 	var t Tree
-	t.InsertMutable(cidrs...)
+	t.InsertMutable(items...)
 	return t
 }
 
@@ -44,39 +51,44 @@ func New(cidrs ...netip.Prefix) Tree {
 //
 // Convenience function for initializing the cidrtree for large inputs (> 100_000).
 // A good value reference for jobs is the number of logical CPUs [runtine.NumCPU] usable by the current process.
-func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
+func NewConcurrent(jobs int, items ...KeyVal) Tree {
 	// define a min chunk size, don't split in too small chunks
 	const minChunkSize = 25_000
 
 	// no fan-out for small input slice or just one job
-	l := len(cidrs)
+	l := len(items)
 	if l < minChunkSize || jobs <= 1 {
-		return New(cidrs...)
+		return New(items...)
 	}
 
 	chunkSize := l/jobs + 1
 	if chunkSize < minChunkSize {
 		chunkSize = minChunkSize
+
+		// don't use go routine and result channel for just one chunk
+		if l < chunkSize {
+			return New(items...)
+		}
 	}
 
 	var wg sync.WaitGroup
-	var chunk []netip.Prefix
+	var chunk []KeyVal
 	partialTrees := make(chan Tree)
 
 	// fan-out
-	for ; l > 0; l = len(cidrs) {
+	for ; l > 0; l = len(items) {
 		// partition input into chunks
 		switch {
 		case l > chunkSize:
-			chunk = cidrs[:chunkSize]
-			cidrs = cidrs[chunkSize:]
+			chunk = items[:chunkSize]
+			items = items[chunkSize:]
 		default: // rest
-			chunk = cidrs[:l]
-			cidrs = nil
+			chunk = items[:l]
+			items = nil
 		}
 
 		wg.Add(1)
-		go func(chunk ...netip.Prefix) {
+		go func(chunk ...KeyVal) {
 			defer wg.Done()
 			partialTrees <- New(chunk...)
 		}(chunk...)
@@ -98,12 +110,12 @@ func NewConcurrent(jobs int, cidrs ...netip.Prefix) Tree {
 
 // Insert netip prefixes into the tree, returns the new Tree.
 // Duplicate prefixes are just skipped.
-func (t Tree) Insert(cidrs ...netip.Prefix) Tree {
-	for _, key := range cidrs {
-		if key.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(key), true)
+func (t Tree) Insert(items ...KeyVal) Tree {
+	for _, item := range items {
+		if item.CIDR.Addr().Is4() {
+			t.root4 = t.root4.insert(makeNode(item), true)
 		} else {
-			t.root6 = t.root6.insert(makeNode(key), true)
+			t.root6 = t.root6.insert(makeNode(item), true)
 		}
 	}
 
@@ -113,12 +125,12 @@ func (t Tree) Insert(cidrs ...netip.Prefix) Tree {
 // InsertMutable insert netip prefixes into the tree, changing the original tree.
 // Duplicate prefixes are just skipped.
 // If the original tree does not need to be preserved then this is much faster than the immutable insert.
-func (t *Tree) InsertMutable(cidrs ...netip.Prefix) {
-	for _, key := range cidrs {
-		if key.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(key), false)
+func (t *Tree) InsertMutable(items ...KeyVal) {
+	for _, item := range items {
+		if item.CIDR.Addr().Is4() {
+			t.root4 = t.root4.insert(makeNode(item), false)
 		} else {
-			t.root6 = t.root6.insert(makeNode(key), false)
+			t.root6 = t.root6.insert(makeNode(item), false)
 		}
 	}
 }
@@ -275,7 +287,7 @@ func (n *node) union(b *node, immutable bool) *node {
 	return n
 }
 
-// Lookup returns the longest-prefix-match for ip.
+// Lookup returns the longest-prefix-match for ip and associated value.
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
 // The algorithm for Lookup does NOT allocate memory.
 //
@@ -300,11 +312,11 @@ func (n *node) union(b *node, immutable bool) *node {
 //     ├─ fe80::/10
 //     └─ ff00::/8
 //
-//      tree.Lookup("42.0.0.0")             returns netip.Prefix{}, false
-//      tree.Lookup("10.0.1.17")            returns 10.0.1.0/24,    true
-//      tree.Lookup("2001:7c0:3100:1::111") returns 2000::/3,       true
+//      tree.Lookup("42.0.0.0")             returns (netip.Prefix{}, <nil>,  false)
+//      tree.Lookup("10.0.1.17")            returns (10.0.1.0/24,    <value>, true)
+//      tree.Lookup("2001:7c0:3100:1::111") returns (2000::/3,       <value>, true)
 //
-func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, ok bool) {
+func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
 	if ip.Is4() {
 		return t.root4.lookup(ip)
 	}
@@ -312,7 +324,7 @@ func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, ok bool) {
 }
 
 // lookup rec-descent
-func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, ok bool) {
+func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -335,13 +347,13 @@ func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, ok bool) {
 	}
 
 	// right backtracking
-	if cidr, ok = n.right.lookup(ip); ok {
+	if cidr, value, ok = n.right.lookup(ip); ok {
 		return
 	}
 
 	// lpm match
 	if n.cidr.Contains(ip) {
-		return n.cidr, true
+		return n.cidr, n.value, true
 	}
 
 	// left rec-descent
@@ -467,10 +479,11 @@ func (n *node) join(m *node, immutable bool) *node {
 // ###########################################################
 
 // makeNode, create new node with cidr.
-func makeNode(cidr netip.Prefix) *node {
+func makeNode(item KeyVal) *node {
 	n := new(node)
-	n.cidr = cidr.Masked() // always store the prefix in canonical form
-	n.recalc()             // init the augmented field with recalc
+	n.cidr = item.CIDR.Masked() // always store the prefix in canonical form
+	n.value = item.Value
+	n.recalc() // init the augmented field with recalc
 	return n
 }
 

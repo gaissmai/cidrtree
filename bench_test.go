@@ -26,12 +26,13 @@ var intMap = map[int]string{
 
 // full internet prefix list, gzipped
 var (
-	prefixFile    = "testdata/prefixes.txt.gz"
-	internetCIDRs = makeInternetPrefixes()
+	prefixFile     = "testdata/prefixes.txt.gz"
+	fullTableItems = fromIternetRouteTable()
 )
 
-func makeInternetPrefixes() []netip.Prefix {
-	var cidrs []netip.Prefix
+func fromIternetRouteTable() []cidrtree.KeyVal {
+	var items []cidrtree.KeyVal
+	payload := []netip.Addr{netip.MustParseAddr("0.0.0.0"), netip.MustParseAddr("::")}
 
 	file, err := os.Open(prefixFile)
 	if err != nil {
@@ -47,21 +48,21 @@ func makeInternetPrefixes() []netip.Prefix {
 	for scanner.Scan() {
 		line := scanner.Text()
 		line = strings.TrimSpace(line)
-		cidrs = append(cidrs, netip.MustParsePrefix(line))
+		items = append(items, cidrtree.KeyVal{netip.MustParsePrefix(line), payload})
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("reading from %v, %v", rgz, err)
 	}
-	return cidrs
+	return items
 }
 
-func sliceCIDRs(n int) []netip.Prefix {
-	if n > len(internetCIDRs) {
+func sliceItems(n int) []cidrtree.KeyVal {
+	if n > len(fullTableItems) {
 		panic("n too big")
 	}
 
-	var clone []netip.Prefix
-	clone = append(clone, internetCIDRs...)
+	var clone []cidrtree.KeyVal
+	clone = append(clone, fullTableItems...)
 
 	rand.Shuffle(len(clone), func(i, j int) {
 		clone[i], clone[j] = clone[j], clone[i]
@@ -71,7 +72,7 @@ func sliceCIDRs(n int) []netip.Prefix {
 
 func BenchmarkNew(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
-		cidrs := sliceCIDRs(k)
+		cidrs := sliceItems(k)
 		b.Run(intMap[k], func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				_ = cidrtree.New(cidrs...)
@@ -82,7 +83,7 @@ func BenchmarkNew(b *testing.B) {
 
 func BenchmarkNewCC(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
-		cidrs := sliceCIDRs(k)
+		cidrs := sliceItems(k)
 		b.Run(intMap[k], func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				_ = cidrtree.NewConcurrent(runtime.NumCPU(), cidrs...)
@@ -93,7 +94,7 @@ func BenchmarkNewCC(b *testing.B) {
 
 func BenchmarkClone(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
-		tree := cidrtree.New(sliceCIDRs(k)...)
+		tree := cidrtree.New(sliceItems(k)...)
 		name := "Clone" + intMap[k]
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
@@ -106,8 +107,8 @@ func BenchmarkClone(b *testing.B) {
 
 func BenchmarkInsert(b *testing.B) {
 	for n := 1; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
-		probe := cidrs[rand.Intn(len(cidrs))]
+		tree := cidrtree.New(sliceItems(n)...)
+		probe := items[rand.Intn(len(items))]
 		name := "Into" + intMap[n]
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
@@ -120,8 +121,8 @@ func BenchmarkInsert(b *testing.B) {
 
 func BenchmarkInsertMutable(b *testing.B) {
 	for n := 1; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
-		probe := cidrs[rand.Intn(len(cidrs))]
+		tree := cidrtree.New(sliceItems(n)...)
+		probe := items[rand.Intn(len(items))]
 		name := "Into" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
@@ -135,14 +136,14 @@ func BenchmarkInsertMutable(b *testing.B) {
 
 func BenchmarkDelete(b *testing.B) {
 	for n := 1; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
-		probe := cidrs[rand.Intn(len(cidrs))]
+		tree := cidrtree.New(sliceItems(n)...)
+		probe := items[rand.Intn(len(items))]
 		name := "DeleteFrom" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				_, _ = tree.Delete(probe)
+				_, _ = tree.Delete(probe.CIDR)
 			}
 		})
 	}
@@ -150,23 +151,23 @@ func BenchmarkDelete(b *testing.B) {
 
 func BenchmarkMutableDelete(b *testing.B) {
 	for n := 1; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
-		probe := cidrs[rand.Intn(len(cidrs))]
+		tree := cidrtree.New(sliceItems(n)...)
+		probe := items[rand.Intn(len(items))]
 		name := "DeleteFrom" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				_ = tree.DeleteMutable(probe)
+				_ = tree.DeleteMutable(probe.CIDR)
 			}
 		})
 	}
 }
 
 func BenchmarkUnionImmutable(b *testing.B) {
-	this100_000 := cidrtree.New(sliceCIDRs(100_000)...)
+	this100_000 := cidrtree.New(sliceItems(100_000)...)
 	for n := 10; n <= 100_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
+		tree := cidrtree.New(sliceItems(n)...)
 		name := "size100_000with" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
@@ -179,9 +180,9 @@ func BenchmarkUnionImmutable(b *testing.B) {
 }
 
 func BenchmarkUnionMutable(b *testing.B) {
-	this100_000 := cidrtree.New(sliceCIDRs(100_000)...)
+	this100_000 := cidrtree.New(sliceItems(100_000)...)
 	for n := 10; n <= 100_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
+		tree := cidrtree.New(sliceItems(n)...)
 		name := "size100_000with" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
@@ -195,15 +196,15 @@ func BenchmarkUnionMutable(b *testing.B) {
 
 func BenchmarkLookupMatch(b *testing.B) {
 	for n := 100; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
-		probe := sliceCIDRs(100)[0]
-		ip := probe.Addr()
+		tree := cidrtree.New(sliceItems(n)...)
+		probe := sliceItems(100)[0]
+		ip := probe.CIDR.Addr()
 		name := "In" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				_, _ = tree.Lookup(ip)
+				_, _, _ = tree.Lookup(ip)
 			}
 		})
 	}
@@ -211,14 +212,14 @@ func BenchmarkLookupMatch(b *testing.B) {
 
 func BenchmarkLookupMiss(b *testing.B) {
 	for n := 100; n <= 1_000_000; n *= 10 {
-		tree := cidrtree.New(sliceCIDRs(n)...)
+		tree := cidrtree.New(sliceItems(n)...)
 		ip := netip.MustParseAddr("209.46.0.0")
 		name := "In" + intMap[n]
 
 		b.Run(name, func(b *testing.B) {
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				_, _ = tree.Lookup(ip)
+				_, _, _ = tree.Lookup(ip)
 			}
 		})
 	}

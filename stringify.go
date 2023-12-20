@@ -19,24 +19,24 @@ func (t Tree) String() string {
 // and the subtree structure is determined by the CIDRs coverage.
 //
 //   ▼
-//   └─ 0.0.0.0/0
-//      ├─ 10.0.0.0/8
-//      │  ├─ 10.0.0.0/24
-//      │  └─ 10.0.1.0/24
-//      ├─ 127.0.0.0/8
-//      │  └─ 127.0.0.1/32
-//      ├─ 169.254.0.0/16
-//      ├─ 172.16.0.0/12
-//      └─ 192.168.0.0/16
-//         └─ 192.168.1.0/24
+//   └─ 0.0.0.0/0 (value)
+//      ├─ 10.0.0.0/8 (value)
+//      │  ├─ 10.0.0.0/24 (value)
+//      │  └─ 10.0.1.0/24 (value)
+//      ├─ 127.0.0.0/8 (value)
+//      │  └─ 127.0.0.1/32 (value)
+//      ├─ 169.254.0.0/16 (value)
+//      ├─ 172.16.0.0/12 (value)
+//      └─ 192.168.0.0/16 (value)
+//         └─ 192.168.1.0/24 (value)
 //   ▼
-//   └─ ::/0
-//      ├─ ::1/128
-//      ├─ 2000::/3
-//      │  └─ 2001:db8::/32
-//      ├─ fc00::/7
-//      ├─ fe80::/10
-//      └─ ff00::/8
+//   └─ ::/0 (value)
+//      ├─ ::1/128 (value)
+//      ├─ 2000::/3 (value)
+//      │  └─ 2001:db8::/32 (value)
+//      ├─ fc00::/7 (value)
+//      ├─ fe80::/10 (value)
+//      └─ ff00::/8 (value)
 //
 func (t Tree) Fprint(w io.Writer) error {
 	if err := t.root4.fprint(w); err != nil {
@@ -78,7 +78,7 @@ func (n *node) fprint(w io.Writer) error {
 func (n *node) walkAndStringify(w io.Writer, pcm parentChildsMap, pad string) error {
 	// the prefix (pad + glyphe) is already printed on the line on upper level
 	if n != nil {
-		if _, err := fmt.Fprintf(w, "%v\n", n.cidr); err != nil {
+		if _, err := fmt.Fprintf(w, "%v (%v)\n", n.cidr, n.value); err != nil {
 			return err
 		}
 	}
