@@ -287,6 +287,45 @@ func (n *node) union(b *node, immutable bool) *node {
 	return n
 }
 
+// Walk iterates the cidrtree in ascending order.
+// The callback function is called with the nodes Route.
+// If callback returns `false`, the iteration is aborted.
+func (t *Tree) Walk(cb func(r Route) bool) {
+	if t == nil {
+		return
+	}
+
+	if !t.root4.walk(cb) {
+		return
+	}
+
+	t.root6.walk(cb)
+}
+
+// walk tree in ascending prefix order.
+func (n *node) walk(cb func(r Route) bool) bool {
+	if n == nil {
+		return true
+	}
+
+	// left
+	if !n.left.walk(cb) {
+		return false
+	}
+
+	// do-it
+	if !cb(Route{n.cidr, n.value}) {
+		return false
+	}
+
+	// right
+	if !n.right.walk(cb) {
+		return false
+	}
+
+	return true
+}
+
 // Lookup returns the longest-prefix-match for ip and associated value.
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
 // The algorithm for Lookup does NOT allocate memory.

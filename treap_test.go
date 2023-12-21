@@ -1,6 +1,7 @@
 package cidrtree_test
 
 import (
+	"fmt"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -42,7 +43,25 @@ func makeRoutes(rs []routeStr) (routes []cidrtree.Route) {
 	return routes
 }
 
-const asStr = `▼
+const asStr = `10.0.0.0/8 (203.0.113.0)
+10.0.0.0/24 (203.0.113.0)
+10.0.1.0/24 (203.0.113.0)
+127.0.0.0/8 (203.0.113.0)
+127.0.0.1/32 (203.0.113.0)
+169.254.0.0/16 (203.0.113.0)
+172.16.0.0/12 (203.0.113.0)
+192.168.0.0/16 (203.0.113.0)
+192.168.1.0/24 (203.0.113.0)
+::/0 (2001:db8::1)
+::1/128 (2001:db8::1)
+2000::/3 (2001:db8::1)
+2001:db8::/32 (2001:db8::1)
+fc00::/7 (2001:db8::1)
+fe80::/10 (2001:db8::1)
+ff00::/8 (2001:db8::1)
+`
+
+const asTopoStr = `▼
 ├─ 10.0.0.0/8 (203.0.113.0)
 │  ├─ 10.0.0.0/24 (203.0.113.0)
 │  └─ 10.0.1.0/24 (203.0.113.0)
@@ -102,8 +121,8 @@ func TestNew(t *testing.T) {
 
 	tree := cidrtree.New(routes...)
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 }
 
@@ -156,8 +175,8 @@ func TestInsert(t *testing.T) {
 		tree = tree.Insert(cidr)
 	}
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 }
 
@@ -173,16 +192,16 @@ func TestDupInsert(t *testing.T) {
 		tree = tree.Insert(dupe)
 	}
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 
 	for _, dupe := range routes {
 		tree.InsertMutable(dupe)
 	}
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 }
 
@@ -194,8 +213,8 @@ func TestInsertMutable(t *testing.T) {
 		tree.InsertMutable(cidr)
 	}
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 }
 
@@ -266,8 +285,8 @@ func TestDelete(t *testing.T) {
 
 	tree := cidrtree.New(routes...)
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 
 	for _, route := range routes {
@@ -288,8 +307,8 @@ func TestDeleteMutable(t *testing.T) {
 
 	tree := cidrtree.New(routes...)
 
-	if tree.String() != asStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asStr, tree.String())
+	if tree.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
 	}
 
 	for _, route := range routes {
@@ -438,7 +457,55 @@ func TestFprint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if w.String() != asStr {
+	if w.String() != asTopoStr {
 		t.Fatal("Fprint, expected and got differs")
+	}
+}
+
+func TestWalk(t *testing.T) {
+	t.Parallel()
+	tree := cidrtree.New(routes...)
+	w := new(strings.Builder)
+
+	cb := func(r cidrtree.Route) bool {
+		fmt.Fprintf(w, "%v (%v)\n", r.CIDR, r.Value)
+		return true
+	}
+
+	tree.Walk(cb)
+	if w.String() != asStr {
+		t.Fatalf("Walk, expected:\n%sgot:\n%s", asStr, w.String())
+	}
+}
+
+func TestWalkStartStop(t *testing.T) {
+	t.Parallel()
+	tree := cidrtree.New(routes...)
+	w := new(strings.Builder)
+
+	cb := func(r cidrtree.Route) bool {
+		if r.CIDR.Addr().Is4() {
+			// skip
+			return true
+		}
+		if r.CIDR == netip.MustParsePrefix("fc00::/7") {
+			// stop
+			return false
+		}
+
+		fmt.Fprintf(w, "%v (%v)\n", r.CIDR, r.Value)
+		return true
+	}
+
+	tree.Walk(cb)
+
+	expect := `::/0 (2001:db8::1)
+::1/128 (2001:db8::1)
+2000::/3 (2001:db8::1)
+2001:db8::/32 (2001:db8::1)
+`
+
+	if w.String() != expect {
+		t.Fatalf("Walk, expected:\n%sgot:\n%s", expect, w.String())
 	}
 }
