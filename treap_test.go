@@ -12,7 +12,7 @@ import (
 
 type routeStr struct {
 	cidr    string
-	nexthop string
+	nextHop string
 }
 
 var routesStr = []routeStr{
@@ -34,11 +34,17 @@ var routesStr = []routeStr{
 	{"ff00::/8", "2001:db8::1"},
 }
 
+type route struct {
+	cidr    netip.Prefix
+	nextHop netip.Addr
+}
+
 var routes = makeRoutes(routesStr)
 
-func makeRoutes(rs []routeStr) (routes []cidrtree.Route) {
-	for _, route := range rs {
-		routes = append(routes, cidrtree.Route{netip.MustParsePrefix(route.cidr), netip.MustParseAddr(route.nexthop)})
+func makeRoutes(rs []routeStr) []route {
+	var routes []route
+	for _, s := range rs {
+		routes = append(routes, route{netip.MustParsePrefix(s.cidr), netip.MustParseAddr(s.nextHop)})
 	}
 	return routes
 }
@@ -86,14 +92,14 @@ func TestZeroValue(t *testing.T) {
 
 	var zeroIP netip.Addr
 	var zeroCIDR netip.Prefix
-	var zeroTree cidrtree.Tree
+	var zeroTable cidrtree.Table
 
-	if zeroTree.String() != "" {
+	if zeroTable.String() != "" {
 		t.Errorf("String() = %v, want \"\"", "")
 	}
 
 	w := new(strings.Builder)
-	if err := zeroTree.Fprint(w); err != nil {
+	if err := zeroTable.Fprint(w); err != nil {
 		t.Fatal(err)
 	}
 
@@ -105,177 +111,146 @@ func TestZeroValue(t *testing.T) {
 		t.Errorf("FprintBST(w) = %v, want \"\"", w.String())
 	}
 
-	if _, ok := zeroTree.Delete(zeroCIDR); ok {
+	// must not panic
+	zeroTable.Walk(func(netip.Prefix, any) bool { return true })
+
+	if _, ok := zeroTable.Delete(zeroCIDR); ok {
 		t.Errorf("Delete(), got: %v, want: false", ok)
 	}
 
-	if _, _, ok := zeroTree.Lookup(zeroIP); ok {
+	if _, _, ok := zeroTable.LookupIP(zeroIP); ok {
 		t.Errorf("Lookup(), got: %v, want: false", ok)
 	}
-}
 
-func TestNew(t *testing.T) {
-	t.Parallel()
-
-	_ = cidrtree.New()
-
-	tree := cidrtree.New(routes...)
-
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
-	}
-}
-
-func TestNewConcurrent(t *testing.T) {
-	t.Parallel()
-	cidrs := sliceItems(100_000)
-
-	// test zero
-	tree1 := cidrtree.New()
-	tree2 := cidrtree.NewConcurrent(0)
-
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("New() differs with NewConcurrent()")
-	}
-
-	tree1 = cidrtree.New(cidrs[0])
-	tree2 = cidrtree.NewConcurrent(1, cidrs[0])
-
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("New() differs with NewConcurrent()")
-	}
-
-	tree1 = cidrtree.New(cidrs[:2]...)
-	tree2 = cidrtree.NewConcurrent(2, cidrs[:2]...)
-
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("New() differs with NewConcurrent()")
-	}
-
-	tree1 = cidrtree.New(cidrs[:30_000]...)
-	tree2 = cidrtree.NewConcurrent(3, cidrs[:30_000]...)
-
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("New() differs with NewConcurrent()")
-	}
-
-	tree1 = cidrtree.New(cidrs...)
-	tree2 = cidrtree.NewConcurrent(4, cidrs...)
-
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("New() differs with NewConcurrent()")
+	if _, _, ok := zeroTable.LookupCIDR(zeroCIDR); ok {
+		t.Errorf("LookupCIDR(), got: %v, want: false", ok)
 	}
 }
 
 func TestInsert(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New()
+	rtbl := cidrtree.New()
 
-	for _, cidr := range routes {
-		tree = tree.Insert(cidr)
+	for _, route := range routes {
+		rtbl = rtbl.Insert(route.cidr, route.nextHop)
 	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 }
 
 func TestDupInsert(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New()
+	rtbl := cidrtree.New()
 
-	for _, cidr := range routes {
-		tree = tree.Insert(cidr)
+	for _, route := range routes {
+		rtbl = rtbl.Insert(route.cidr, route.nextHop)
 	}
 
 	for _, dupe := range routes {
-		tree = tree.Insert(dupe)
+		rtbl = rtbl.Insert(dupe.cidr, dupe.nextHop)
 	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 
 	for _, dupe := range routes {
-		tree.InsertMutable(dupe)
+		rtbl.InsertMutable(dupe.cidr, dupe.nextHop)
 	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 }
 
 func TestInsertMutable(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New()
+	rtbl := cidrtree.New()
 
-	for _, cidr := range routes {
-		tree.InsertMutable(cidr)
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 }
 
 func TestImmutable(t *testing.T) {
 	t.Parallel()
 
-	tree1 := cidrtree.New(routes...)
-	tree2 := tree1.Clone()
+	rtbl1 := cidrtree.New()
+	for _, route := range routes {
+		rtbl1.InsertMutable(route.cidr, route.nextHop)
+	}
+	rtbl2 := rtbl1.Clone()
 
-	if !reflect.DeepEqual(tree1, tree2) {
-		t.Fatal("cloned tree is not deep equal to original")
+	if !reflect.DeepEqual(rtbl1, rtbl2) {
+		t.Fatal("cloned table is not deep equal to original")
 	}
 
 	probe := routes[0]
-	if _, ok := tree1.Delete(probe.CIDR); !ok {
+	if _, ok := rtbl1.Delete(probe.cidr); !ok {
 		t.Fatal("Delete, could not delete probe item")
 	}
-	if !reflect.DeepEqual(tree1, tree2) {
+	if !reflect.DeepEqual(rtbl1, rtbl2) {
 		t.Fatal("Delete changed receiver")
 	}
 
 	probe = routes[len(routes)-1]
-	_ = tree1.Insert(probe)
-	if !reflect.DeepEqual(tree1, tree2) {
+	_ = rtbl1.Insert(probe.cidr, probe.nextHop)
+	if !reflect.DeepEqual(rtbl1, rtbl2) {
 		t.Fatal("Insert changed receiver")
 	}
 
-	ip := probe.CIDR.Addr()
-	_, _, _ = tree1.Lookup(ip)
-	if !reflect.DeepEqual(tree1, tree2) {
+	ip := probe.cidr.Addr()
+	_, _, _ = rtbl1.LookupIP(ip)
+	if !reflect.DeepEqual(rtbl1, rtbl2) {
 		t.Fatal("Lookup changed receiver")
+	}
+
+	cidr := probe.cidr
+	_, _, _ = rtbl1.LookupCIDR(cidr)
+	if !reflect.DeepEqual(rtbl1, rtbl2) {
+		t.Fatal("LookupCIDR changed receiver")
 	}
 }
 
 func TestMutable(t *testing.T) {
-	tree1 := cidrtree.New(routes...)
-	tree2 := tree1.Clone()
+	rtbl1 := cidrtree.New()
+	for _, route := range routes {
+		rtbl1.InsertMutable(route.cidr, route.nextHop)
+	}
+	rtbl2 := rtbl1.Clone()
 
 	probe := routes[0]
 
 	var ok bool
-	if ok = (&tree1).DeleteMutable(probe.CIDR); !ok {
+	if ok = rtbl1.DeleteMutable(probe.cidr); !ok {
 		t.Fatal("DeleteMutable, could not delete probe item")
 	}
 
-	if reflect.DeepEqual(tree1, tree2) {
+	if reflect.DeepEqual(rtbl1, rtbl2) {
 		t.Fatal("DeleteMutable didn't change receiver")
 	}
 
-	// reset tree1, tree2
-	tree1 = cidrtree.New(routes...)
-	tree2 = tree1.Clone()
+	// reset table1, table2
+	rtbl1 = cidrtree.New()
+	for _, route := range routes {
+		rtbl1.InsertMutable(route.cidr, route.nextHop)
+	}
+	rtbl2 = rtbl1.Clone()
 
-	probe = cidrtree.Route{netip.MustParsePrefix("1.2.3.4/17"), nil}
-	(&tree1).InsertMutable(probe)
+	probe = route{cidr: netip.MustParsePrefix("1.2.3.4/17")}
+	rtbl1.InsertMutable(probe.cidr, probe.nextHop)
 
-	if reflect.DeepEqual(tree1, tree2) {
+	if reflect.DeepEqual(rtbl1, rtbl2) {
 		t.Fatal("InsertMutable didn't change receiver")
 	}
 
-	if _, ok := tree1.Delete(probe.CIDR); !ok {
+	if _, ok := rtbl1.Delete(probe.cidr); !ok {
 		t.Fatal("InsertMutable didn't change receiver")
 	}
 }
@@ -283,49 +258,58 @@ func TestMutable(t *testing.T) {
 func TestDelete(t *testing.T) {
 	t.Parallel()
 
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 
 	for _, route := range routes {
 		var ok bool
-		tree, ok = tree.Delete(route.CIDR)
+		rtbl, ok = rtbl.Delete(route.cidr)
 		if !ok {
-			t.Fatalf("Delete(%v), got %v, want true", route.CIDR, ok)
+			t.Fatalf("Delete(%v), got %v, want true", route.cidr, ok)
 		}
 	}
 
-	if tree.String() != "" {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", "", tree.String())
+	if rtbl.String() != "" {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", "", rtbl.String())
 	}
 }
 
 func TestDeleteMutable(t *testing.T) {
 	t.Parallel()
 
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 
-	if tree.String() != asTopoStr {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, tree.String())
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 
 	for _, route := range routes {
-		if ok := tree.DeleteMutable(route.CIDR); !ok {
-			t.Fatalf("Delete(%v), got %v, want true", route.CIDR, ok)
+		if ok := rtbl.DeleteMutable(route.cidr); !ok {
+			t.Fatalf("Delete(%v), got %v, want true", route.cidr, ok)
 		}
 	}
 
-	if tree.String() != "" {
-		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", "", tree.String())
+	if rtbl.String() != "" {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", "", rtbl.String())
 	}
 }
 
 func TestLookup(t *testing.T) {
 	t.Parallel()
 
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 
 	tcs := []struct {
 		ip     netip.Addr
@@ -372,13 +356,13 @@ func TestLookup(t *testing.T) {
 	}
 
 	for _, tt := range tcs {
-		if got, got2, ok := tree.Lookup(tt.ip); ok != tt.wantOK || got != tt.want {
+		if got, got2, ok := rtbl.LookupIP(tt.ip); ok != tt.wantOK || got != tt.want {
 			t.Errorf("Lookup(%v) = (%v, %v, %v),  want (%v, %v, %v)", tt.ip, got, got2, ok, tt.want, tt.want2, tt.wantOK)
 		}
 	}
 
 	prefix := netip.MustParsePrefix("10.0.0.0/8")
-	if ok := tree.DeleteMutable(prefix); !ok {
+	if ok := rtbl.DeleteMutable(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
@@ -386,12 +370,12 @@ func TestLookup(t *testing.T) {
 	want := netip.Prefix{}
 	want2 := any(nil)
 
-	if got, got2, ok := tree.Lookup(ip); ok == true || got != want || got2 != want2 {
+	if got, got2, ok := rtbl.LookupIP(ip); ok == true || got != want || got2 != want2 {
 		t.Errorf("Lookup(%v) = %v, %v, %v, want %v, %v, %v", ip, got, got2, ok, want, want2, false)
 	}
 
 	prefix = netip.MustParsePrefix("::/0")
-	if ok := tree.DeleteMutable(prefix); !ok {
+	if ok := rtbl.DeleteMutable(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
@@ -399,61 +383,171 @@ func TestLookup(t *testing.T) {
 	want = netip.Prefix{}
 	want2 = any(nil)
 
-	if got, got2, ok := tree.Lookup(ip); ok == true || got != want || got2 != want2 {
+	if got, got2, ok := rtbl.LookupIP(ip); ok == true || got != want || got2 != want2 {
 		t.Errorf("Lookup(%v) = %v, %v, %v, want %v, %v, %v", ip, got, got2, ok, want, want2, false)
 	}
 
 	// ##########################################
 
-	tc := sliceItems(100_000)
-	tree = cidrtree.New(tc...)
-	for _, route := range tc {
-		ip := route.CIDR.Addr()
+	tc := cloneAndShuffleRoutes(100_000)
+	rtbl2 := cidrtree.New()
+	for _, cidr := range tc {
+		rtbl2.InsertMutable(cidr, nil)
+	}
+	for _, cidr := range tc {
+		ip := cidr.Addr()
 
-		if _, _, ok := tree.Lookup(ip); !ok {
+		if _, _, ok := rtbl2.LookupIP(ip); !ok {
 			t.Fatalf("Lookup(%v), want true, got %v", ip, ok)
 		}
 
 		ip = ip.Prev()
-		match, _, ok := tree.Lookup(ip)
-		if ok && match == route.CIDR {
-			t.Fatalf("Lookup(%v), match(%v) == cidr (%v), not allowed", ip, match, route.CIDR)
+		match, _, ok := rtbl2.LookupIP(ip)
+		if ok && match == cidr {
+			t.Fatalf("Lookup(%v), match(%v) == cidr (%v), not allowed", ip, match, cidr)
+		}
+	}
+}
+
+func TestLookupCIDR(t *testing.T) {
+	t.Parallel()
+
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
+
+	tcs := []struct {
+		cidr      netip.Prefix
+		wantCIDR  netip.Prefix
+		wantValue netip.Addr
+		wantOK    bool
+	}{
+		{
+			cidr:      netip.MustParsePrefix("10.0.1.0/29"),
+			wantCIDR:  netip.MustParsePrefix("10.0.1.0/24"),
+			wantValue: netip.MustParseAddr("203.0.113.0"),
+			wantOK:    true,
+		},
+		{
+			cidr:      netip.MustParsePrefix("10.2.0.0/16"),
+			wantCIDR:  netip.MustParsePrefix("10.0.0.0/8"),
+			wantValue: netip.MustParseAddr("203.0.113.0"),
+			wantOK:    true,
+		},
+		{
+			cidr:      netip.MustParsePrefix("12.0.0.0/8"),
+			wantCIDR:  netip.Prefix{},
+			wantValue: netip.Addr{},
+			wantOK:    false,
+		},
+		{
+			cidr:      netip.MustParsePrefix("127.0.0.2/32"),
+			wantCIDR:  netip.MustParsePrefix("127.0.0.0/8"),
+			wantValue: netip.MustParseAddr("203.0.113.0"),
+			wantOK:    true,
+		},
+		{
+			cidr:      netip.MustParsePrefix("::2/96"),
+			wantCIDR:  netip.MustParsePrefix("::/0"),
+			wantValue: netip.MustParseAddr("2001:db8::1"),
+			wantOK:    true,
+		},
+		{
+			cidr:      netip.MustParsePrefix("2001:db8:affe:cafe:dead:beef::/96"),
+			wantCIDR:  netip.MustParsePrefix("2001:db8::/32"),
+			wantValue: netip.MustParseAddr("2001:db8::1"),
+			wantOK:    true,
+		},
+	}
+
+	for _, tt := range tcs {
+		if got, got2, ok := rtbl.LookupCIDR(tt.cidr); ok != tt.wantOK || got != tt.wantCIDR {
+			t.Errorf("LookupCIDR(%v) = (%v, %v, %v),  want (%v, %v, %v)", tt.cidr, got, got2, ok, tt.wantCIDR, tt.wantValue, tt.wantOK)
+		}
+	}
+
+	prefix := netip.MustParsePrefix("10.0.0.0/8")
+	if ok := rtbl.DeleteMutable(prefix); !ok {
+		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
+	}
+
+	cidr := netip.MustParsePrefix("10.2.0.0/16")
+	wantCIDR := netip.Prefix{}
+	wantValue := any(nil)
+
+	if got, got2, ok := rtbl.LookupCIDR(cidr); ok == true || got != wantCIDR || got2 != wantValue {
+		t.Errorf("LookupCIDR(%v) = %v, %v, %v, want %v, %v, %v", cidr, got, got2, ok, wantCIDR, wantValue, false)
+	}
+
+	prefix = netip.MustParsePrefix("::/0")
+	if ok := rtbl.DeleteMutable(prefix); !ok {
+		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
+	}
+
+	cidr = netip.MustParsePrefix("::2/96")
+	wantCIDR = netip.Prefix{}
+	wantValue = any(nil)
+
+	if got, got2, ok := rtbl.LookupCIDR(cidr); ok == true || got != wantCIDR || got2 != wantValue {
+		t.Errorf("LookupCIDR(%v) = %v, %v, %v, want %v, %v, %v", cidr, got, got2, ok, wantCIDR, wantValue, false)
+	}
+
+	// ##########################################
+
+	tc := cloneAndShuffleRoutes(100_000)
+
+	rtbl2 := cidrtree.New()
+	for _, cidr := range tc {
+		rtbl2.InsertMutable(cidr, nil)
+	}
+	for _, cidr := range tc {
+		if _, _, ok := rtbl2.LookupCIDR(cidr); !ok {
+			t.Fatalf("LookupCIDR(%v), want true, got %v", cidr, ok)
 		}
 	}
 }
 
 func TestUnion(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New(routes...)
-	clone := tree.Clone()
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
+	clone := rtbl.Clone()
 
-	if !reflect.DeepEqual(tree, clone) {
-		t.Fatal("Clone isn't deep equal to original tree.")
+	if !reflect.DeepEqual(rtbl, clone) {
+		t.Fatal("Clone isn't deep equal to original table.")
 	}
 
-	var tree2 cidrtree.Tree
-	for _, cidr := range routes {
-		tree2 = tree2.Union(cidrtree.New(cidr), false)
+	rtbl2 := cidrtree.New()
+	rtbl3 := cidrtree.New()
+	for _, route := range routes {
+		rtbl3.InsertMutable(route.cidr, route.nextHop)
+		rtbl2.UnionMutable(rtbl3)
 	}
 
-	if !reflect.DeepEqual(tree, clone) {
-		t.Fatal("tree2 isn't deep equal to original tree.")
+	if !reflect.DeepEqual(rtbl2, clone) {
+		t.Fatal("table2 isn't deep equal to original table.")
 	}
 
 	// dupe union
-	tree = tree.Union(tree2, true)
+	rtbl = rtbl.Union(rtbl2)
 
-	if !reflect.DeepEqual(tree, clone) {
-		t.Fatal("Clone isn't deep equal to original tree.")
+	if !reflect.DeepEqual(rtbl, clone) {
+		t.Fatal("Clone isn't deep equal to original table.")
 	}
 }
 
 func TestFprint(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 
 	w := new(strings.Builder)
-	if err := tree.Fprint(w); err != nil {
+	if err := rtbl.Fprint(w); err != nil {
 		t.Fatal(err)
 	}
 
@@ -464,15 +558,18 @@ func TestFprint(t *testing.T) {
 
 func TestWalk(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 	w := new(strings.Builder)
 
-	cb := func(r cidrtree.Route) bool {
-		fmt.Fprintf(w, "%v (%v)\n", r.CIDR, r.Value)
+	cb := func(pfx netip.Prefix, val any) bool {
+		fmt.Fprintf(w, "%v (%v)\n", pfx, val)
 		return true
 	}
 
-	tree.Walk(cb)
+	rtbl.Walk(cb)
 	if w.String() != asStr {
 		t.Fatalf("Walk, expected:\n%sgot:\n%s", asStr, w.String())
 	}
@@ -480,24 +577,27 @@ func TestWalk(t *testing.T) {
 
 func TestWalkStartStop(t *testing.T) {
 	t.Parallel()
-	tree := cidrtree.New(routes...)
+	rtbl := cidrtree.New()
+	for _, route := range routes {
+		rtbl.InsertMutable(route.cidr, route.nextHop)
+	}
 	w := new(strings.Builder)
 
-	cb := func(r cidrtree.Route) bool {
-		if r.CIDR.Addr().Is4() {
+	cb := func(pfx netip.Prefix, val any) bool {
+		if pfx.Addr().Is4() {
 			// skip
 			return true
 		}
-		if r.CIDR == netip.MustParsePrefix("fc00::/7") {
+		if pfx == netip.MustParsePrefix("fc00::/7") {
 			// stop
 			return false
 		}
 
-		fmt.Fprintf(w, "%v (%v)\n", r.CIDR, r.Value)
+		fmt.Fprintf(w, "%v (%v)\n", pfx, val)
 		return true
 	}
 
-	tree.Walk(cb)
+	rtbl.Walk(cb)
 
 	expect := `::/0 (2001:db8::1)
 ::1/128 (2001:db8::1)

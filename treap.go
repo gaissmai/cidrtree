@@ -1,29 +1,26 @@
-// Package cidrtree provides fast IP to CIDR lookup (longest prefix match).
+// Package cidrtree implements fast lookup (longest-prefix-match) for IP routing tables (IPv4/IPv6).
 //
-// This package is a specialization of the more generic [interval package] of the same author,
-// but explicit for CIDRs. It has a narrow focus with a smaller and simpler API.
+// The implementation is based on treaps, which have been augmented here for CIDRs.
 //
-// [interval package]: https://github.com/gaissmai/interval
+// Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps,
+// the lookups (readers) and updates (writers) can be decoupled,
+// which is a perfect fit for a software router or firewall.
 package cidrtree
 
 import (
+	"hash/fnv"
 	"net/netip"
-	"sync"
+
+	"github.com/gaissmai/extnetip"
 )
 
 type (
-	// Tree is the public handle to the hidden implementation.
-	Tree struct {
-		// make a treap for every IP version, not really necessary but a little bit faster
+	// Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
+	Table struct {
+		// make a treap for every IP version, not really necessary but faster
 		// since the augmented field with maxUpper cidr bound does not cross the IP version domains.
 		root4 *node
 		root6 *node
-	}
-
-	// Route, CIDRs are keys and the values are typically the next-hop of the route or an array of next-hops in ECMP routing.
-	Route struct {
-		CIDR  netip.Prefix
-		Value any
 	}
 
 	// node is the recursive data structure of the treap.
@@ -39,103 +36,35 @@ type (
 	}
 )
 
-// New initializes the cidrtree with zero or more routes.
+// New returns a pointer to the zero value of Table.
+func New() *Table {
+	return &Table{}
+}
+
+// Insert routes into the table, returns the new table.
 // Duplicate prefixes are just skipped.
-func New(routes ...Route) Tree {
-	var t Tree
-	t.InsertMutable(routes...)
-	return t
+func (t Table) Insert(pfx netip.Prefix, val any) *Table {
+	if pfx.Addr().Is4() {
+		t.root4 = t.root4.insert(makeNode(pfx, val), true)
+		return &t
+	}
+	t.root6 = t.root6.insert(makeNode(pfx, val), true)
+	return &t
 }
 
-// NewConcurrent, splits the input data into chunks, fan-out to [New] and recombine the trees (mutable) with [Union].
-//
-// Convenience function for initializing the cidrtree for large inputs (> 100_000).
-// A good value reference for jobs is the number of logical CPUs [runtine.NumCPU] usable by the current process.
-func NewConcurrent(jobs int, routes ...Route) Tree {
-	// define a min chunk size, don't split in too small chunks
-	const minChunkSize = 25_000
-
-	// no fan-out for small input slice or just one job
-	l := len(routes)
-	if l < minChunkSize || jobs <= 1 {
-		return New(routes...)
-	}
-
-	chunkSize := l/jobs + 1
-	if chunkSize < minChunkSize {
-		chunkSize = minChunkSize
-
-		// don't use go routine and result channel for just one chunk
-		if l < chunkSize {
-			return New(routes...)
-		}
-	}
-
-	var wg sync.WaitGroup
-	var chunk []Route
-	partialTrees := make(chan Tree)
-
-	// fan-out
-	for ; l > 0; l = len(routes) {
-		// partition input into chunks
-		switch {
-		case l > chunkSize:
-			chunk = routes[:chunkSize]
-			routes = routes[chunkSize:]
-		default: // rest
-			chunk = routes[:l]
-			routes = nil
-		}
-
-		wg.Add(1)
-		go func(chunk ...Route) {
-			defer wg.Done()
-			partialTrees <- New(chunk...)
-		}(chunk...)
-	}
-
-	// wait and close chan
-	go func() {
-		wg.Wait()
-		close(partialTrees)
-	}()
-
-	// fan-in, mutable
-	var t Tree
-	for other := range partialTrees {
-		t = t.Union(other, false) // immutable is false
-	}
-	return t
-}
-
-// Insert routes into the tree, returns the new Tree.
+// InsertMutable insert routes into the table, changing the original table.
 // Duplicate prefixes are just skipped.
-func (t Tree) Insert(routes ...Route) Tree {
-	for _, route := range routes {
-		if route.CIDR.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(route), true)
-		} else {
-			t.root6 = t.root6.insert(makeNode(route), true)
-		}
+// If the original table does not need to be preserved then this is much faster than the immutable insert.
+func (t *Table) InsertMutable(pfx netip.Prefix, val any) {
+	if pfx.Addr().Is4() {
+		t.root4 = t.root4.insert(makeNode(pfx, val), false)
+		return
 	}
-
-	return t
+	t.root6 = t.root6.insert(makeNode(pfx, val), false)
 }
 
-// InsertMutable insert routes into the tree, changing the original tree.
-// Duplicate prefixes are just skipped.
-// If the original tree does not need to be preserved then this is much faster than the immutable insert.
-func (t *Tree) InsertMutable(routes ...Route) {
-	for _, route := range routes {
-		if route.CIDR.Addr().Is4() {
-			t.root4 = t.root4.insert(makeNode(route), false)
-		} else {
-			t.root6 = t.root6.insert(makeNode(route), false)
-		}
-	}
-}
-
-// insert into tree, changing nodes are copied, new treap is returned, old treap is modified if immutable is false.
+// insert into treap, changing nodes are copied, new treap is returned,
+// old treap is modified if immutable is false.
 func (n *node) insert(m *node, immutable bool) *node {
 	if n == nil {
 		// recursion stop condition
@@ -197,8 +126,8 @@ func (n *node) insert(m *node, immutable bool) *node {
 	return n
 }
 
-// Delete removes the cdir if it exists, returns the new tree and true, false if not found.
-func (t Tree) Delete(cidr netip.Prefix) (Tree, bool) {
+// Delete removes the cdir if it exists, returns the new table and true, false if not found.
+func (t Table) Delete(cidr netip.Prefix) (*Table, bool) {
 	cidr = cidr.Masked() // always canonicalize!
 
 	is4 := cidr.Addr().Is4()
@@ -219,12 +148,12 @@ func (t Tree) Delete(cidr netip.Prefix) (Tree, bool) {
 	}
 
 	ok := m != nil
-	return t, ok
+	return &t, ok
 }
 
-// DeleteMutable removes the cidr from tree, returns true if it exists, false otherwise.
-// If the original tree does not need to be preserved then this is much faster than the immutable delete.
-func (t *Tree) DeleteMutable(cidr netip.Prefix) bool {
+// DeleteMutable removes the cidr from table, returns true if it exists, false otherwise.
+// If the original table does not need to be preserved then this is much faster than the immutable delete.
+func (t *Table) DeleteMutable(cidr netip.Prefix) bool {
 	cidr = cidr.Masked() // always canonicalize!
 
 	is4 := cidr.Addr().Is4()
@@ -247,13 +176,19 @@ func (t *Tree) DeleteMutable(cidr netip.Prefix) bool {
 	return m != nil
 }
 
-// Union combines any two trees. Duplicates are skipped.
-//
-// The "immutable" flag controls whether the two trees are allowed to be modified.
-func (t Tree) Union(other Tree, immutable bool) Tree {
-	t.root4 = t.root4.union(other.root4, immutable)
-	t.root6 = t.root6.union(other.root6, immutable)
-	return t
+// Union combines any two tables. The tables tables are not changed.
+// Duplicates are skipped.
+func (t Table) Union(other *Table) *Table {
+	t.root4 = t.root4.union(other.root4, true)
+	t.root6 = t.root6.union(other.root6, true)
+	return &t
+}
+
+// UnionMutable combines two tables, changing the receiver table.
+// Duplicates are skipped.
+func (t *Table) UnionMutable(other *Table) {
+	t.root4 = t.root4.union(other.root4, false)
+	t.root6 = t.root6.union(other.root6, false)
 }
 
 func (n *node) union(b *node, immutable bool) *node {
@@ -288,13 +223,9 @@ func (n *node) union(b *node, immutable bool) *node {
 }
 
 // Walk iterates the cidrtree in ascending order.
-// The callback function is called with the nodes Route.
+// The callback function is called with the Route struct of the respective node.
 // If callback returns `false`, the iteration is aborted.
-func (t *Tree) Walk(cb func(r Route) bool) {
-	if t == nil {
-		return
-	}
-
+func (t *Table) Walk(cb func(pfx netip.Prefix, val any) bool) {
 	if !t.root4.walk(cb) {
 		return
 	}
@@ -303,7 +234,7 @@ func (t *Tree) Walk(cb func(r Route) bool) {
 }
 
 // walk tree in ascending prefix order.
-func (n *node) walk(cb func(r Route) bool) bool {
+func (n *node) walk(cb func(pfy netip.Prefix, val any) bool) bool {
 	if n == nil {
 		return true
 	}
@@ -314,7 +245,7 @@ func (n *node) walk(cb func(r Route) bool) bool {
 	}
 
 	// do-it
-	if !cb(Route{n.cidr, n.value}) {
+	if !cb(n.cidr, n.value) {
 		return false
 	}
 
@@ -326,44 +257,43 @@ func (n *node) walk(cb func(r Route) bool) bool {
 	return true
 }
 
-// Lookup returns the longest-prefix-match for ip and associated value.
+// LookupIP returns the longest-prefix-match (lpm) for given ip.
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
-// The algorithm for Lookup does NOT allocate memory.
+// LookupIP does not allocate memory.
 //
-//  example:
+//	example:
 //
-//  ▼
-//  ├─ 10.0.0.0/8
-//  │  ├─ 10.0.0.0/24
-//  │  └─ 10.0.1.0/24
-//  ├─ 127.0.0.0/8
-//  │  └─ 127.0.0.1/32
-//  ├─ 169.254.0.0/16
-//  ├─ 172.16.0.0/12
-//  └─ 192.168.0.0/16
-//     └─ 192.168.1.0/24
-//  ▼
-//  └─ ::/0
-//     ├─ ::1/128
-//     ├─ 2000::/3
-//     │  └─ 2001:db8::/32
-//     ├─ fc00::/7
-//     ├─ fe80::/10
-//     └─ ff00::/8
+//	▼
+//	├─ 10.0.0.0/8
+//	│  ├─ 10.0.0.0/24
+//	│  └─ 10.0.1.0/24
+//	├─ 127.0.0.0/8
+//	│  └─ 127.0.0.1/32
+//	├─ 169.254.0.0/16
+//	├─ 172.16.0.0/12
+//	└─ 192.168.0.0/16
+//	   └─ 192.168.1.0/24
+//	▼
+//	└─ ::/0
+//	   ├─ ::1/128
+//	   ├─ 2000::/3
+//	   │  └─ 2001:db8::/32
+//	   ├─ fc00::/7
+//	   ├─ fe80::/10
+//	   └─ ff00::/8
 //
-//      tree.Lookup("42.0.0.0")             returns (netip.Prefix{}, <nil>,  false)
-//      tree.Lookup("10.0.1.17")            returns (10.0.1.0/24,    <value>, true)
-//      tree.Lookup("2001:7c0:3100:1::111") returns (2000::/3,       <value>, true)
-//
-func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
+//	    rtbl.LookupIP(42.0.0.0)             returns (netip.Prefix{}, <nil>,  false)
+//	    rtbl.LookupIP(10.0.1.17)            returns (10.0.1.0/24,    <value>, true)
+//	    rtbl.LookupIP(2001:7c0:3100:1::111) returns (2000::/3,       <value>, true)
+func (t Table) LookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 	if ip.Is4() {
-		return t.root4.lookup(ip)
+		return t.root4.lookupIP(ip)
 	}
-	return t.root6.lookup(ip)
+	return t.root6.lookupIP(ip)
 }
 
-// lookup rec-descent
-func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
+// lookupIP rec-descent
+func (n *node) lookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -386,7 +316,7 @@ func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
 	}
 
 	// right backtracking
-	if cidr, value, ok = n.right.lookup(ip); ok {
+	if lpm, value, ok = n.right.lookupIP(ip); ok {
 		return
 	}
 
@@ -396,14 +326,103 @@ func (n *node) lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool) {
 	}
 
 	// left rec-descent
-	return n.left.lookup(ip)
+	return n.left.lookupIP(ip)
 }
 
-// Clone, deep cloning of the CIDR tree.
-func (t Tree) Clone() Tree {
+// LookupCIDR returns the longest-prefix-match (lpm) for given prefix.
+// If the prefix isn't equal or covered by any CIDR in the table, the zero value and false is returned.
+//
+// LookupCIDR does not allocate memory.
+//
+//	example:
+//
+//	▼
+//	├─ 10.0.0.0/8
+//	│  ├─ 10.0.0.0/24
+//	│  └─ 10.0.1.0/24
+//	├─ 127.0.0.0/8
+//	│  └─ 127.0.0.1/32
+//	├─ 169.254.0.0/16
+//	├─ 172.16.0.0/12
+//	└─ 192.168.0.0/16
+//	   └─ 192.168.1.0/24
+//	▼
+//	└─ ::/0
+//	   ├─ ::1/128
+//	   ├─ 2000::/3
+//	   │  └─ 2001:db8::/32
+//	   ├─ fc00::/7
+//	   ├─ fe80::/10
+//	   └─ ff00::/8
+//
+//	    rtbl.LookupCIDR(42.0.0.0/8)         returns (netip.Prefix{}, <nil>,  false)
+//	    rtbl.LookupCIDR(10.0.1.0/29)        returns (10.0.1.0/24,    <value>, true)
+//	    rtbl.LookupCIDR(192.168.0.0/16)     returns (192.168.0.0/16, <value>, true)
+//	    rtbl.LookupCIDR(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
+func (t Table) LookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
+	if pfx.Addr().Is4() {
+		return t.root4.lookupCIDR(pfx)
+	}
+	return t.root6.lookupCIDR(pfx)
+}
+
+// lookupCIDR rec-descent
+func (n *node) lookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
+	for {
+		// recursion stop condition
+		if n == nil {
+			return
+		}
+
+		// fast exit with (augmented) max upper value
+		if pfxTooBig(pfx, n.maxUpper.cidr) {
+			// recursion stop condition
+			return
+		}
+
+		// if cidr is already less-or-equal pfx
+		cmp := compare(n.cidr, pfx)
+
+		// match!
+		if cmp == 0 {
+			return n.cidr, n.value, true
+		}
+
+		if cmp < 0 {
+			break // ok, proceed with this cidr
+		}
+
+		// fast traverse to left
+		n = n.left
+	}
+
+	// right backtracking
+	if lpm, value, ok = n.right.lookupCIDR(pfx); ok {
+		return
+	}
+
+	// lpm match:
+	// CIDRs are equal ...
+	if n.cidr == pfx {
+		return n.cidr, n.value, true
+	}
+
+	// ... or supernets
+	if n.cidr.Contains(pfx.Addr()) {
+		return n.cidr, n.value, true
+	}
+
+	// ... or disjunct
+
+	// left rec-descent
+	return n.left.lookupCIDR(pfx)
+}
+
+// Clone, deep cloning of the routing table.
+func (t Table) Clone() *Table {
 	t.root4 = t.root4.clone()
 	t.root6 = t.root6.clone()
-	return t
+	return &t
 }
 
 func (n *node) clone() *node {
@@ -517,11 +536,25 @@ func (n *node) join(m *node, immutable bool) *node {
 //            mothers little helpers
 // ###########################################################
 
+func (n *node) prio() uint64 {
+	// MarshalBinary would allocate
+	raw := n.cidr.Addr().As16()
+	bits := byte(n.cidr.Bits())
+
+	data := make([]byte, 0, 17)
+	data = append(data, raw[:]...)
+	data = append(data, bits)
+
+	h := fnv.New64()
+	h.Write(data[:])
+	return h.Sum64()
+}
+
 // makeNode, create new node with cidr.
-func makeNode(route Route) *node {
+func makeNode(pfx netip.Prefix, val any) *node {
 	n := new(node)
-	n.cidr = route.CIDR.Masked() // always store the prefix in canonical form
-	n.value = route.Value
+	n.cidr = pfx.Masked() // always store the prefix in normalized form
+	n.value = val
 	n.recalc() // init the augmented field with recalc
 	return n
 }
@@ -558,6 +591,10 @@ func (n *node) recalc() {
 // compare two prefixes and sort by the left address,
 // or if equal always sort the superset to the left.
 func compare(a, b netip.Prefix) int {
+	if a == b {
+		return 0
+	}
+
 	// compare left points of cidrs
 	ll := a.Addr().Compare(b.Addr())
 
@@ -579,44 +616,25 @@ func compare(a, b netip.Prefix) int {
 	return 0
 }
 
-// cmpRR compares (indirect) the prefixes last address.
+// cmpRR compares the prefixes last address.
 func cmpRR(a, b netip.Prefix) int {
 	if a == b {
 		return 0
 	}
+	_, aLast := extnetip.Range(a)
+	_, bLast := extnetip.Range(b)
 
-	ll := a.Addr().Compare(b.Addr())
-	overlaps := a.Overlaps(b)
-
-	switch {
-	case ll < 0:
-		if overlaps {
-			return 1
-		}
-		return -1
-	case ll > 0:
-		if overlaps {
-			return -1
-		}
-		return 1
-	}
-
-	// ll == 0 && rr != 0
-	if a.Bits() > b.Bits() {
-		return -1
-	}
-	return 1
+	return aLast.Compare(bLast)
 }
 
 // ipTooBig returns true if ip is greater than prefix last address.
-// The test must be indirect since netip has no method to get the last address of the prefix.
 func ipTooBig(ip netip.Addr, p netip.Prefix) bool {
-	if p.Contains(ip) {
-		return false
-	}
-	if ip.Compare(p.Addr()) > 0 {
-		// ... but not contained, indirect proof for tooBig
-		return true
-	}
-	return false
+	_, pLast := extnetip.Range(p)
+	return ip.Compare(pLast) > 0
+}
+
+// pfxTooBig returns true if k last address is greater than p last address.
+func pfxTooBig(k netip.Prefix, p netip.Prefix) bool {
+	_, ip := extnetip.Range(k)
+	return ipTooBig(ip, p)
 }

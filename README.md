@@ -14,7 +14,14 @@ The next release v0.2.0 has an API change. See the devel branch with the prepare
 
 `package cidrtree` is a datastructure for IP routing tables (IPv4/IPv6) with fast lookup (longest prefix match).
 
+<<<<<<< HEAD
 The implementation is based on treaps, which have been augmented here for CIDRs. Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps, the lookups (readers) and updates (writers) can be decoupled without causing delayed rebalancing, which is a perfect fit for a software router or firewall.
+||||||| parent of 4eb12b4 (add LookupCIDR method)
+Immutability is achieved because insert/delete will return a new tree which will share some nodes with the original tree.
+All nodes are read-only after creation, allowing concurrent readers to operate safely with concurrent writers.
+=======
+The implementation is based on treaps, which have been augmented here for CIDRs. Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps, the lookups (readers) and updates (writers) can be decoupled, which is a perfect fit for a software router or firewall.
+>>>>>>> 4eb12b4 (add LookupCIDR method)
 
 This package is a specialization of the more generic [interval package] of the same author,
 but explicit for CIDRs. It has a narrow focus with a specialized API for IP routing tables.
@@ -25,27 +32,25 @@ but explicit for CIDRs. It has a narrow focus with a specialized API for IP rout
 ```go
   import "github.com/gaissmai/cidrtree"
 
-  type Route struct{
-      CIDR  netip.Prefix   // route
-      Value any            // payload, e.g. next hop(s)
-  }
+  type Table struct { // Has unexported fields.  }
+    Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
 
-  type Tree struct{ /* has unexported fields */ }
+  func New() *Table
 
-  func New(routes ...Route) Tree
-  func NewConcurrent(jobs int, routes ...Route) Tree
+  func (t Table) LookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool)
+  func (t Table) LookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool)
 
-  func (t Tree) Lookup(ip netip.Addr) (cidr netip.Prefix, value any, ok bool)
+  func (t Table) Insert(pfx netip.Prefix, val any) *Table
+  func (t Table) Delete(cidr netip.Prefix) (*Table, bool)
+  func (t Table) Union(other *Table) *Table
+  func (t Table) Clone() *Table
 
-  func (t Tree) Insert(cidrs ...netip.Prefix) Tree
-  func (t Tree) Delete(cidr netip.Prefix) (Tree, bool)
+  func (t *Table) InsertMutable(pfx netip.Prefix, val any)
+  func (t *Table) DeleteMutable(cidr netip.Prefix) bool
+  func (t *Table) UnionMutable(other *Table)
 
-  func (t *Tree) InsertMutable(cidrs ...netip.Prefix)
-  func (t *Tree) DeleteMutable(cidr netip.Prefix) bool
+  func (t Table) String() string
+  func (t Table) Fprint(w io.Writer) error
 
-  func (t Tree) Union(other Tree, immutable bool) Tree
-  func (t Tree) Clone() Tree
-
-  func (t Tree) String() string
-  func (t Tree) Fprint(w io.Writer) error
+  func (t Table) Walk(cb func(pfx netip.Prefix, val any) bool)
 ```

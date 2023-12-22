@@ -7,7 +7,7 @@ import (
 )
 
 // String returns a hierarchical tree diagram of the ordered CIDRs as string, just a wrapper for [Tree.Fprint].
-func (t Tree) String() string {
+func (t Table) String() string {
 	w := new(strings.Builder)
 	_ = t.Fprint(w)
 	return w.String()
@@ -17,28 +17,7 @@ func (t Tree) String() string {
 //
 // The order from top to bottom is in ascending order of the start address
 // and the subtree structure is determined by the CIDRs coverage.
-//
-//   ▼
-//   └─ 0.0.0.0/0 (value)
-//      ├─ 10.0.0.0/8 (value)
-//      │  ├─ 10.0.0.0/24 (value)
-//      │  └─ 10.0.1.0/24 (value)
-//      ├─ 127.0.0.0/8 (value)
-//      │  └─ 127.0.0.1/32 (value)
-//      ├─ 169.254.0.0/16 (value)
-//      ├─ 172.16.0.0/12 (value)
-//      └─ 192.168.0.0/16 (value)
-//         └─ 192.168.1.0/24 (value)
-//   ▼
-//   └─ ::/0 (value)
-//      ├─ ::1/128 (value)
-//      ├─ 2000::/3 (value)
-//      │  └─ 2001:db8::/32 (value)
-//      ├─ fc00::/7 (value)
-//      ├─ fe80::/10 (value)
-//      └─ ff00::/8 (value)
-//
-func (t Tree) Fprint(w io.Writer) error {
+func (t Table) Fprint(w io.Writer) error {
 	if err := t.root4.fprint(w); err != nil {
 		return err
 	}
@@ -113,7 +92,6 @@ func (n *node) walkAndStringify(w io.Writer, pcm parentChildsMap, pad string) er
 // parentChildsMap, needed for hierarchical tree printing, this is not BST printing!
 //
 // CIDR tree, parent->childs relation printed. A parent CIDR covers a child CIDR.
-//
 type parentChildsMap struct {
 	pcMap map[*node][]*node // parent -> []child map
 	stack []*node           // just needed for the algo
