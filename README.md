@@ -6,15 +6,20 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## !!! ATTENTION, API CHANGE AHEAD
+
+The next release v0.2.0 has an API change. See the devel branch with the prepared new API.
+
 ## Overview
 
-`package cidrtree` is an immutable datastructure for fast IP lookup (longest prefix match) in CIDR tables.
+`package cidrtree` is a datastructure for IP routing tables (IPv4/IPv6) with fast lookup (longest prefix match).
 
-Immutability is achieved because insert/delete will return a new tree which will share some nodes with the original tree.
-All nodes are read-only after creation, allowing concurrent readers to operate safely with concurrent writers.
+The implementation is based on treaps, augmented for CIDRs. Treaps are randomized self balancing binary search trees. Due to the nature of treaps the lookups (readers) and updates (writers) can be decoupled, without delayed rebalancing, promising to be a perfect match for a software-router or firewall.
+
+The implementation is based on treaps, which have been augmented here for CIDRs. Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps, the lookups (readers) and updates (writers) can be decoupled without causing delayed rebalancing, which is a perfect fit for a software router or firewall.
 
 This package is a specialization of the more generic [interval package] of the same author,
-but explicit for CIDRs. It has a narrow focus with a smaller and simpler API.
+but explicit for CIDRs. It has a narrow focus with a specialized API for IP routing tables.
 
 [interval package]: https://github.com/gaissmai/interval
 
