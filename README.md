@@ -14,8 +14,6 @@ The next release v0.2.0 has an API change. See the devel branch with the prepare
 
 `package cidrtree` is a datastructure for IP routing tables (IPv4/IPv6) with fast lookup (longest prefix match).
 
-The implementation is based on treaps, augmented for CIDRs. Treaps are randomized self balancing binary search trees. Due to the nature of treaps the lookups (readers) and updates (writers) can be decoupled, without delayed rebalancing, promising to be a perfect match for a software-router or firewall.
-
 The implementation is based on treaps, which have been augmented here for CIDRs. Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps, the lookups (readers) and updates (writers) can be decoupled without causing delayed rebalancing, which is a perfect fit for a software router or firewall.
 
 This package is a specialization of the more generic [interval package] of the same author,
