@@ -2,47 +2,37 @@
 //
 // The implementation is based on treaps, which have been augmented here for CIDRs.
 //
-// Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps,
-// the lookups (readers) and updates (writers) can be decoupled,
-// which is a perfect fit for a software router or firewall.
+// Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps
+// the lookups (readers) and the update (writer) can be easily decoupled.
+// This is the perfect fit for a software router or firewall.
 package cidrtree
 
 import (
-	"hash/fnv"
+	mrand "math/rand"
 	"net/netip"
 
 	"github.com/gaissmai/extnetip"
 )
 
-type (
-	// Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
-	Table struct {
-		// make a treap for every IP version, not really necessary but faster
-		// since the augmented field with maxUpper cidr bound does not cross the IP version domains.
-		root4 *node
-		root6 *node
-	}
-
-	// node is the recursive data structure of the treap.
-	// The heap priority is not stored in the node, it is calculated (crc32) when needed from the prefix.
-	// The same input always produces the same binary tree since the heap priority
-	// is defined by the crc of the cidr.
-	node struct {
-		maxUpper *node // augment the treap, see also recalc()
-		left     *node
-		right    *node
-		value    any
-		cidr     netip.Prefix
-	}
-)
-
-// New returns a pointer to the zero value of Table.
-func New() *Table {
-	return &Table{}
+// Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
+type Table struct {
+	// make a treap for every IP version, the bits of the prefix are part of the weighted priority
+	root4 *node
+	root6 *node
 }
 
-// Insert routes into the table, returns the new table.
-// Duplicate prefixes are just skipped.
+// node is the recursive data structure of the treap.
+type node struct {
+	maxUpper *node // augment the treap, see also recalc()
+	left     *node
+	right    *node
+	value    any
+	cidr     netip.Prefix
+	prio     uint64
+}
+
+// Insert adds pfx to the table with value val, returning a new table.
+// If pfx is already present in the table, its value is set to val.
 func (t Table) Insert(pfx netip.Prefix, val any) *Table {
 	if pfx.Addr().Is4() {
 		t.root4 = t.root4.insert(makeNode(pfx, val), true)
@@ -52,9 +42,8 @@ func (t Table) Insert(pfx netip.Prefix, val any) *Table {
 	return &t
 }
 
-// InsertMutable insert routes into the table, changing the original table.
-// Duplicate prefixes are just skipped.
-// If the original table does not need to be preserved then this is much faster than the immutable insert.
+// InsertMutable adds pfx to the table with value val, changing the original table.
+// If pfx is already present in the table, its value is set to val.
 func (t *Table) InsertMutable(pfx netip.Prefix, val any) {
 	if pfx.Addr().Is4() {
 		t.root4 = t.root4.insert(makeNode(pfx, val), false)
@@ -65,6 +54,7 @@ func (t *Table) InsertMutable(pfx netip.Prefix, val any) {
 
 // insert into treap, changing nodes are copied, new treap is returned,
 // old treap is modified if immutable is false.
+// If node is already present in the table, its value is set to val.
 func (n *node) insert(m *node, immutable bool) *node {
 	if n == nil {
 		// recursion stop condition
@@ -72,7 +62,7 @@ func (n *node) insert(m *node, immutable bool) *node {
 	}
 
 	// if m is the new root?
-	if m.prio() > n.prio() {
+	if m.prio >= n.prio {
 		//
 		//          m
 		//          | split t in ( <m | dupe | >m )
@@ -85,9 +75,14 @@ func (n *node) insert(m *node, immutable bool) *node {
 		//           /
 		//          l
 		//
-		l, _, r := n.split(m.cidr, immutable)
+		l, dupe, r := n.split(m.cidr, immutable)
 
-		// no duplicate handling, take m as new root
+		// replace dupe with m. m has same key but different prio than dupe, a join() is required
+		if dupe != nil {
+			return l.join(m.join(r, immutable), immutable)
+		}
+
+		// no duplicate, take m as new root
 		//
 		//     m
 		//   /  \
@@ -98,11 +93,16 @@ func (n *node) insert(m *node, immutable bool) *node {
 		return m
 	}
 
+	cmp := compare(m.cidr, n.cidr)
+	if cmp == 0 {
+		// replace duplicate item with m, but m has different prio, a join() is required
+		return n.left.join(m.join(n.right, immutable), immutable)
+	}
+
 	if immutable {
 		n = n.copyNode()
 	}
 
-	cmp := compare(m.cidr, n.cidr)
 	switch {
 	case cmp < 0: // rec-descent
 		n.left = n.left.insert(m, immutable)
@@ -118,8 +118,6 @@ func (n *node) insert(m *node, immutable bool) *node {
 		//  l r    m
 		// l   r
 		//
-	default:
-		// cmp == 0, skip duplicate
 	}
 
 	n.recalc() // n has changed, recalc
@@ -176,22 +174,22 @@ func (t *Table) DeleteMutable(cidr netip.Prefix) bool {
 	return m != nil
 }
 
-// Union combines any two tables. The tables tables are not changed.
-// Duplicates are skipped.
+// Union combines any two tables immutable and returns the combined table.
+// If there are duplicate entries, the value is taken from the other table.
 func (t Table) Union(other *Table) *Table {
-	t.root4 = t.root4.union(other.root4, true)
-	t.root6 = t.root6.union(other.root6, true)
+	t.root4 = t.root4.union(other.root4, true, true)
+	t.root6 = t.root6.union(other.root6, true, true)
 	return &t
 }
 
 // UnionMutable combines two tables, changing the receiver table.
-// Duplicates are skipped.
+// If there are duplicate entries, the value is taken from the other table.
 func (t *Table) UnionMutable(other *Table) {
-	t.root4 = t.root4.union(other.root4, false)
-	t.root6 = t.root6.union(other.root6, false)
+	t.root4 = t.root4.union(other.root4, true, false)
+	t.root6 = t.root6.union(other.root6, true, false)
 }
 
-func (n *node) union(b *node, immutable bool) *node {
+func (n *node) union(b *node, overwrite bool, immutable bool) *node {
 	// recursion stop condition
 	if n == nil {
 		return b
@@ -201,8 +199,10 @@ func (n *node) union(b *node, immutable bool) *node {
 	}
 
 	// swap treaps if needed, treap with higher prio remains as new root
-	if n.prio() < b.prio() {
+	// also swap the overwrite flag
+	if n.prio < b.prio {
 		n, b = b, n
+		overwrite = !overwrite
 	}
 
 	// immutable union, copy remaining root
@@ -212,20 +212,26 @@ func (n *node) union(b *node, immutable bool) *node {
 
 	// the treap with the lower priority is split with the root key in the treap
 	// with the higher priority, skip duplicates
-	l, _, r := b.split(n.cidr, immutable)
+	l, dupe, r := b.split(n.cidr, immutable)
+
+	// the treaps may have duplicate items
+	if overwrite && dupe != nil {
+		n.cidr = dupe.cidr
+		n.value = dupe.value
+	}
 
 	// rec-descent
-	n.left = n.left.union(l, immutable)
-	n.right = n.right.union(r, immutable)
+	n.left = n.left.union(l, overwrite, immutable)
+	n.right = n.right.union(r, overwrite, immutable)
 
 	n.recalc() // n has changed, recalc
 	return n
 }
 
 // Walk iterates the cidrtree in ascending order.
-// The callback function is called with the Route struct of the respective node.
+// The callback function is called with the prefix and value of the respective node and the depth in the tree.
 // If callback returns `false`, the iteration is aborted.
-func (t *Table) Walk(cb func(pfx netip.Prefix, val any) bool) {
+func (t Table) Walk(cb func(pfx netip.Prefix, val any) bool) {
 	if !t.root4.walk(cb) {
 		return
 	}
@@ -234,7 +240,7 @@ func (t *Table) Walk(cb func(pfx netip.Prefix, val any) bool) {
 }
 
 // walk tree in ascending prefix order.
-func (n *node) walk(cb func(pfy netip.Prefix, val any) bool) bool {
+func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
 	if n == nil {
 		return true
 	}
@@ -259,6 +265,7 @@ func (n *node) walk(cb func(pfy netip.Prefix, val any) bool) bool {
 
 // LookupIP returns the longest-prefix-match (lpm) for given ip.
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
+//
 // LookupIP does not allocate memory.
 //
 //	example:
@@ -287,13 +294,17 @@ func (n *node) walk(cb func(pfy netip.Prefix, val any) bool) bool {
 //	    rtbl.LookupIP(2001:7c0:3100:1::111) returns (2000::/3,       <value>, true)
 func (t Table) LookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 	if ip.Is4() {
-		return t.root4.lookupIP(ip)
+		// don't return the depth
+		lpm, value, ok, _ = t.root4.lpmIP(ip, 0)
+		return
 	}
-	return t.root6.lookupIP(ip)
+	// don't return the depth
+	lpm, value, ok, _ = t.root6.lpmIP(ip, 0)
+	return
 }
 
-// lookupIP rec-descent
-func (n *node) lookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
+// lpmIP rec-descent
+func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok bool, atDepth int) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -312,21 +323,22 @@ func (n *node) lookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 		}
 
 		// fast traverse to left
+		depth += 1
 		n = n.left
 	}
 
 	// right backtracking
-	if lpm, value, ok = n.right.lookupIP(ip); ok {
+	if lpm, value, ok, atDepth = n.right.lpmIP(ip, depth+1); ok {
 		return
 	}
 
 	// lpm match
 	if n.cidr.Contains(ip) {
-		return n.cidr, n.value, true
+		return n.cidr, n.value, true, depth
 	}
 
 	// left rec-descent
-	return n.left.lookupIP(ip)
+	return n.left.lpmIP(ip, depth+1)
 }
 
 // LookupCIDR returns the longest-prefix-match (lpm) for given prefix.
@@ -361,13 +373,17 @@ func (n *node) lookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 //	    rtbl.LookupCIDR(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
 func (t Table) LookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
 	if pfx.Addr().Is4() {
-		return t.root4.lookupCIDR(pfx)
+		// don't return the depth
+		lpm, value, ok, _ = t.root4.lpmCIDR(pfx, 0)
+		return
 	}
-	return t.root6.lookupCIDR(pfx)
+	// don't return the depth
+	lpm, value, ok, _ = t.root6.lpmCIDR(pfx, 0)
+	return
 }
 
-// lookupCIDR rec-descent
-func (n *node) lookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
+// lpmCIDR rec-descent
+func (n *node) lpmCIDR(pfx netip.Prefix, depth int) (lpm netip.Prefix, value any, ok bool, atDepth int) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -385,7 +401,7 @@ func (n *node) lookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok boo
 
 		// match!
 		if cmp == 0 {
-			return n.cidr, n.value, true
+			return n.cidr, n.value, true, depth
 		}
 
 		if cmp < 0 {
@@ -393,29 +409,30 @@ func (n *node) lookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok boo
 		}
 
 		// fast traverse to left
+		depth += 1
 		n = n.left
 	}
 
 	// right backtracking
-	if lpm, value, ok = n.right.lookupCIDR(pfx); ok {
+	if lpm, value, ok, atDepth = n.right.lpmCIDR(pfx, depth+1); ok {
 		return
 	}
 
 	// lpm match:
 	// CIDRs are equal ...
 	if n.cidr == pfx {
-		return n.cidr, n.value, true
+		return n.cidr, n.value, true, depth
 	}
 
 	// ... or supernets
 	if n.cidr.Contains(pfx.Addr()) {
-		return n.cidr, n.value, true
+		return n.cidr, n.value, true, depth
 	}
 
 	// ... or disjunct
 
 	// left rec-descent
-	return n.left.lookupCIDR(pfx)
+	return n.left.lpmCIDR(pfx, depth+1)
 }
 
 // Clone, deep cloning of the routing table.
@@ -507,7 +524,7 @@ func (n *node) join(m *node, immutable bool) *node {
 		return n
 	}
 
-	if n.prio() > m.prio() {
+	if n.prio > m.prio {
 		//     n
 		//    l r    m
 		//          l r
@@ -536,25 +553,12 @@ func (n *node) join(m *node, immutable bool) *node {
 //            mothers little helpers
 // ###########################################################
 
-func (n *node) prio() uint64 {
-	// MarshalBinary would allocate
-	raw := n.cidr.Addr().As16()
-	bits := byte(n.cidr.Bits())
-
-	data := make([]byte, 0, 17)
-	data = append(data, raw[:]...)
-	data = append(data, bits)
-
-	h := fnv.New64()
-	h.Write(data[:])
-	return h.Sum64()
-}
-
 // makeNode, create new node with cidr.
 func makeNode(pfx netip.Prefix, val any) *node {
 	n := new(node)
 	n.cidr = pfx.Masked() // always store the prefix in normalized form
 	n.value = val
+	n.prio = mrand.Uint64()
 	n.recalc() // init the augmented field with recalc
 	return n
 }

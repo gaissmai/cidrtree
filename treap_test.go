@@ -2,6 +2,7 @@ package cidrtree_test
 
 import (
 	"fmt"
+	mrand "math/rand"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -107,10 +108,6 @@ func TestZeroValue(t *testing.T) {
 		t.Errorf("Fprint(w) = %v, want \"\"", w.String())
 	}
 
-	if w.String() != "" {
-		t.Errorf("FprintBST(w) = %v, want \"\"", w.String())
-	}
-
 	// must not panic
 	zeroTable.Walk(func(netip.Prefix, any) bool { return true })
 
@@ -129,7 +126,7 @@ func TestZeroValue(t *testing.T) {
 
 func TestInsert(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 
 	for _, route := range routes {
 		rtbl = rtbl.Insert(route.cidr, route.nextHop)
@@ -142,7 +139,7 @@ func TestInsert(t *testing.T) {
 
 func TestDupInsert(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 
 	for _, route := range routes {
 		rtbl = rtbl.Insert(route.cidr, route.nextHop)
@@ -163,11 +160,27 @@ func TestDupInsert(t *testing.T) {
 	if rtbl.String() != asTopoStr {
 		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
+
+	cidr := routes[0].cidr
+	_, _, ok := rtbl.LookupCIDR(routes[0].cidr)
+	if !ok {
+		t.Errorf("LookupCIDR(%v), expect %v, got %v", routes[0].cidr, true, ok)
+	}
+	// overwrite value for this cidr
+	rtbl.InsertMutable(cidr, "overwrite value")
+
+	_, value, ok := rtbl.LookupCIDR(cidr)
+	if !ok {
+		t.Errorf("LookupCIDR(%v), expect %v, got %v", routes[0].cidr, true, ok)
+	}
+	if value != "overwrite value" {
+		t.Errorf("InsertMutable duplicate, expect %q, got %q", "overwrite value", value)
+	}
 }
 
 func TestInsertMutable(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
@@ -181,7 +194,7 @@ func TestInsertMutable(t *testing.T) {
 func TestImmutable(t *testing.T) {
 	t.Parallel()
 
-	rtbl1 := cidrtree.New()
+	rtbl1 := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl1.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -219,7 +232,7 @@ func TestImmutable(t *testing.T) {
 }
 
 func TestMutable(t *testing.T) {
-	rtbl1 := cidrtree.New()
+	rtbl1 := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl1.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -237,7 +250,7 @@ func TestMutable(t *testing.T) {
 	}
 
 	// reset table1, table2
-	rtbl1 = cidrtree.New()
+	rtbl1 = new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl1.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -258,7 +271,7 @@ func TestMutable(t *testing.T) {
 func TestDelete(t *testing.T) {
 	t.Parallel()
 
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -283,7 +296,7 @@ func TestDelete(t *testing.T) {
 func TestDeleteMutable(t *testing.T) {
 	t.Parallel()
 
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -303,10 +316,10 @@ func TestDeleteMutable(t *testing.T) {
 	}
 }
 
-func TestLookup(t *testing.T) {
+func TestLookupIP(t *testing.T) {
 	t.Parallel()
 
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -389,8 +402,8 @@ func TestLookup(t *testing.T) {
 
 	// ##########################################
 
-	tc := cloneAndShuffleRoutes(100_000)
-	rtbl2 := cidrtree.New()
+	tc := shuffleFullTable(100_000)
+	rtbl2 := new(cidrtree.Table)
 	for _, cidr := range tc {
 		rtbl2.InsertMutable(cidr, nil)
 	}
@@ -412,7 +425,7 @@ func TestLookup(t *testing.T) {
 func TestLookupCIDR(t *testing.T) {
 	t.Parallel()
 
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -495,9 +508,9 @@ func TestLookupCIDR(t *testing.T) {
 
 	// ##########################################
 
-	tc := cloneAndShuffleRoutes(100_000)
+	tc := shuffleFullTable(100_000)
 
-	rtbl2 := cidrtree.New()
+	rtbl2 := new(cidrtree.Table)
 	for _, cidr := range tc {
 		rtbl2.InsertMutable(cidr, nil)
 	}
@@ -510,7 +523,7 @@ func TestLookupCIDR(t *testing.T) {
 
 func TestUnion(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -520,28 +533,28 @@ func TestUnion(t *testing.T) {
 		t.Fatal("Clone isn't deep equal to original table.")
 	}
 
-	rtbl2 := cidrtree.New()
-	rtbl3 := cidrtree.New()
-	for _, route := range routes {
-		rtbl3.InsertMutable(route.cidr, route.nextHop)
-		rtbl2.UnionMutable(rtbl3)
+	probe := routes[mrand.Intn(len(routes))]
+	rtbl2 := new(cidrtree.Table).Insert(probe.cidr, "overwrite value")
+
+	// overwrite value for this cidr
+	rtbl.UnionMutable(rtbl2)
+
+	if reflect.DeepEqual(rtbl, clone) {
+		t.Fatal("union with overwrite must not deep equal to original table.")
 	}
 
-	if !reflect.DeepEqual(rtbl2, clone) {
-		t.Fatal("table2 isn't deep equal to original table.")
+	_, value, ok := rtbl.LookupCIDR(probe.cidr)
+	if !ok {
+		t.Errorf("LookupCIDR(%v), expect %v, got %v", probe.cidr, true, ok)
 	}
-
-	// dupe union
-	rtbl = rtbl.Union(rtbl2)
-
-	if !reflect.DeepEqual(rtbl, clone) {
-		t.Fatal("Clone isn't deep equal to original table.")
+	if value != "overwrite value" {
+		t.Errorf("UnionMutable with duplicate, expect %q, got %q", "overwrite value", value)
 	}
 }
 
 func TestFprint(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -552,13 +565,13 @@ func TestFprint(t *testing.T) {
 	}
 
 	if w.String() != asTopoStr {
-		t.Fatal("Fprint, expected and got differs")
+		t.Errorf("Fprint, not as expected, got:\n%s", w.String())
 	}
 }
 
 func TestWalk(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
@@ -577,7 +590,7 @@ func TestWalk(t *testing.T) {
 
 func TestWalkStartStop(t *testing.T) {
 	t.Parallel()
-	rtbl := cidrtree.New()
+	rtbl := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
 	}
