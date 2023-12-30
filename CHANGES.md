@@ -1,3 +1,6 @@
+v0.2.1 Fri Dec 29 23:47:49 2023 +0100
+    * update to latest extnetip version
+
 v0.2.0 Fri Dec 29 20:54:58 2023 +0100
     * API CHANGE!!!
 
