@@ -18,7 +18,7 @@ func TestFprintBST(t *testing.T) {
 		rtbl.InsertMutable(randPfx4(), nil)
 		rtbl.InsertMutable(randPfx6(), nil)
 	}
-	size, maxDepth, average, deviation := rtbl.statistics()
+	size, maxDepth, average, deviation := rtbl.statistics(nil)
 	t.Logf("v4/v6: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 
 	t.Log()
@@ -37,7 +37,7 @@ func TestStatisticsRandom(t *testing.T) {
 		for c := 0; c <= i; c++ {
 			rtbl.InsertMutable(randPfx(), nil)
 		}
-		size, maxDepth, average, deviation := rtbl.statistics()
+		size, maxDepth, average, deviation := rtbl.statistics(nil)
 		t.Logf("v4/v6: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 	}
 }
@@ -47,8 +47,29 @@ func TestStatisticsFullTable(t *testing.T) {
 	for _, cidr := range fullTable {
 		rtbl.InsertMutable(cidr, nil)
 	}
-	size, maxDepth, average, deviation := rtbl.statistics()
-	t.Logf("FullTable: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
+
+	skip4 := func(pfx netip.Prefix, val any, depth int) bool {
+		if pfx.Addr().Is4() {
+			return true
+		}
+		return false
+	}
+
+	skip6 := func(pfx netip.Prefix, val any, depth int) bool {
+		if !pfx.Addr().Is4() {
+			return true
+		}
+		return false
+	}
+
+	size, maxDepth, average, deviation := rtbl.statistics(skip6)
+	t.Logf("FullTableV4: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
+
+	size, maxDepth, average, deviation = rtbl.statistics(skip4)
+	t.Logf("FullTableV6: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
+
+	size, maxDepth, average, deviation = rtbl.statistics(nil)
+	t.Logf("FullTable:   size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 }
 
 func TestLPMRandom(t *testing.T) {
@@ -57,7 +78,7 @@ func TestLPMRandom(t *testing.T) {
 		for c := 0; c <= i; c++ {
 			rtbl.InsertMutable(randPfx(), nil)
 		}
-		size, maxDepth, average, _ := rtbl.statistics()
+		size, maxDepth, average, _ := rtbl.statistics(nil)
 		var lpm netip.Prefix
 		var depth int
 
@@ -82,7 +103,7 @@ func TestLPMFullTableWithDefaultRoutes(t *testing.T) {
 	rtbl.InsertMutable(dg4, nil)
 	rtbl.InsertMutable(dg6, nil)
 
-	size, maxDepth, average, deviation := rtbl.statistics()
+	size, maxDepth, average, deviation := rtbl.statistics(nil)
 	t.Logf("FullTable: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 	t.Log()
 

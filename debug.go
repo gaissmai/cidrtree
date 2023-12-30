@@ -76,15 +76,20 @@ func (n *node) fprintBST(w io.Writer, pad string) error {
 	return nil
 }
 
-// Statistics, returns the maxDepth, average and standard deviation of the nodes.
+// statistics, returns the maxDepth, average and standard deviation of the nodes.
+// If the skip function is not nil, a true return value defines which nodes must be skipped in the statistics.
 //
 // Note: This is for debugging and testing purposes only during development.
-func (t Table) statistics() (size int, maxDepth int, average, deviation float64) {
+func (t Table) statistics(skip func(netip.Prefix, any, int) bool) (size int, maxDepth int, average, deviation float64) {
 	// key is depth, value is the sum of nodes with this depth
 	depths := make(map[int]int)
 
 	// closure callback, get the depths, sum up the size
 	cb := func(pfx netip.Prefix, val any, depth int) bool {
+		if skip != nil && skip(pfx, val, depth) {
+			return true
+		}
+
 		depths[depth] += 1
 		size += 1
 		return true

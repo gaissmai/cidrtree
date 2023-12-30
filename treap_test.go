@@ -121,6 +121,10 @@ func TestZeroValue(t *testing.T) {
 	if _, _, ok := zeroTable.LookupCIDR(zeroCIDR); ok {
 		t.Errorf("LookupCIDR(), got: %v, want: false", ok)
 	}
+
+	if rtbl := zeroTable.Union(&zeroTable); *rtbl != zeroTable {
+		t.Errorf("Union(), got: %#v, want: %#v", rtbl, &zeroTable)
+	}
 }
 
 func TestInsert(t *testing.T) {
@@ -532,6 +536,12 @@ func TestUnion(t *testing.T) {
 	rtbl.UnionMutable(rtbl2)
 	if rtbl.String() != asTopoStr {
 		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
+	}
+
+	clone := rtbl.Clone()
+	rtbl.UnionMutable(new(cidrtree.Table))
+	if !reflect.DeepEqual(rtbl, clone) {
+		t.Fatal("UnionMutable with zero value changed original")
 	}
 
 	rtbl3 := rtbl.Union(rtbl2)
