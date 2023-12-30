@@ -189,6 +189,8 @@ func (t *Table) UnionMutable(other *Table) {
 	t.root6 = t.root6.union(other.root6, true, false)
 }
 
+// union two treaps.
+// flag overwrite isn't public but needed as input for rec-descent calls, see below when trepa are swapped.
 func (n *node) union(b *node, overwrite bool, immutable bool) *node {
 	// recursion stop condition
 	if n == nil {
@@ -631,14 +633,25 @@ func cmpRR(a, b netip.Prefix) int {
 	return aLast.Compare(bLast)
 }
 
-// ipTooBig returns true if ip is greater than prefix last address.
-func ipTooBig(ip netip.Addr, p netip.Prefix) bool {
-	_, pLast := extnetip.Range(p)
-	return ip.Compare(pLast) > 0
+// ipTooBig returns true if ip is greater than prefix last ip address.
+//
+//		  false                    true
+//		    |                        |
+//		    V                        V
+//
+//	  ------- other -------->
+func ipTooBig(ip netip.Addr, other netip.Prefix) bool {
+	_, pLastIP := extnetip.Range(other)
+	return ip.Compare(pLastIP) > 0
 }
 
-// pfxTooBig returns true if k last address is greater than p last address.
-func pfxTooBig(k netip.Prefix, p netip.Prefix) bool {
-	_, ip := extnetip.Range(k)
-	return ipTooBig(ip, p)
+// pfxTooBig returns true if prefix last address is greater than other last ip address.
+//
+//	------------ pfx --------------> true
+//	------ pfx ----> false
+//
+//	------- other -------->
+func pfxTooBig(pfx netip.Prefix, other netip.Prefix) bool {
+	_, pfxLastIP := extnetip.Range(pfx)
+	return ipTooBig(pfxLastIP, other)
 }

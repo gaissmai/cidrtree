@@ -2,7 +2,6 @@ package cidrtree_test
 
 import (
 	"fmt"
-	mrand "math/rand"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -524,31 +523,50 @@ func TestLookupCIDR(t *testing.T) {
 func TestUnion(t *testing.T) {
 	t.Parallel()
 	rtbl := new(cidrtree.Table)
+	rtbl2 := new(cidrtree.Table)
 	for _, route := range routes {
 		rtbl.InsertMutable(route.cidr, route.nextHop)
-	}
-	clone := rtbl.Clone()
-
-	if !reflect.DeepEqual(rtbl, clone) {
-		t.Fatal("Clone isn't deep equal to original table.")
+		rtbl2.InsertMutable(route.cidr, route.nextHop)
 	}
 
-	probe := routes[mrand.Intn(len(routes))]
-	rtbl2 := new(cidrtree.Table).Insert(probe.cidr, "overwrite value")
-
-	// overwrite value for this cidr
 	rtbl.UnionMutable(rtbl2)
-
-	if reflect.DeepEqual(rtbl, clone) {
-		t.Fatal("union with overwrite must not deep equal to original table.")
+	if rtbl.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 
-	_, value, ok := rtbl.LookupCIDR(probe.cidr)
-	if !ok {
-		t.Errorf("LookupCIDR(%v), expect %v, got %v", probe.cidr, true, ok)
+	rtbl3 := rtbl.Union(rtbl2)
+	if rtbl3.String() != asTopoStr {
+		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
-	if value != "overwrite value" {
-		t.Errorf("UnionMutable with duplicate, expect %q, got %q", "overwrite value", value)
+}
+
+func TestUnionDupe(t *testing.T) {
+	t.Parallel()
+	rtbl1 := new(cidrtree.Table)
+	rtbl2 := new(cidrtree.Table)
+	for _, cidr := range shuffleFullTable(100_000) {
+		rtbl1.InsertMutable(cidr, 1)
+		// dupe cidr with different value
+		rtbl2.InsertMutable(cidr, 2)
+	}
+	// both tables have identical CIDRs but with different values
+	// overwrite all values with value=2
+	rtbl1.UnionMutable(rtbl2)
+
+	var wrongValue bool
+
+	// callback as closure
+	cb := func(pfx netip.Prefix, val any) bool {
+		if v, ok := val.(int); ok && v != 2 {
+			wrongValue = true
+			return false
+		}
+		return true
+	}
+
+	rtbl1.Walk(cb)
+	if wrongValue {
+		t.Error("Union with duplicate CIDRs didn't overwrite")
 	}
 }
 
