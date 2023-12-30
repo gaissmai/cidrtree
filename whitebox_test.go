@@ -49,17 +49,11 @@ func TestStatisticsFullTable(t *testing.T) {
 	}
 
 	skip4 := func(pfx netip.Prefix, val any, depth int) bool {
-		if pfx.Addr().Is4() {
-			return true
-		}
-		return false
+		return pfx.Addr().Is4()
 	}
 
 	skip6 := func(pfx netip.Prefix, val any, depth int) bool {
-		if !pfx.Addr().Is4() {
-			return true
-		}
-		return false
+		return !pfx.Addr().Is4()
 	}
 
 	size, maxDepth, average, deviation := rtbl.statistics(skip6)
