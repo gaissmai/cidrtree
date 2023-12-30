@@ -35,7 +35,7 @@ func (t Table) fprintBST(w io.Writer) error {
 // fprintBST recursive helper.
 func (n *node) fprintBST(w io.Writer, pad string) error {
 	// stringify this node
-	_, err := fmt.Fprintf(w, "%v [subtree maxUpper: %v]\n", n.cidr, n.maxUpper.cidr)
+	_, err := fmt.Fprintf(w, "%v [prio:%.4g] [subtree maxUpper: %v]\n", n.cidr, float64(n.prio)/math.MaxUint64, n.maxUpper.cidr)
 	if err != nil {
 		return err
 	}
