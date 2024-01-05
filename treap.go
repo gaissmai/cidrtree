@@ -8,6 +8,7 @@
 package cidrtree
 
 import (
+	"cmp"
 	mrand "math/rand"
 	"net/netip"
 
@@ -34,6 +35,8 @@ type node struct {
 // Insert adds pfx to the table with value val, changing the original table.
 // If pfx is already present in the table, its value is set to val.
 func (t *Table) Insert(pfx netip.Prefix, val any) {
+	pfx = pfx.Masked() // always canonicalize!
+
 	if pfx.Addr().Is4() {
 		t.root4 = t.root4.insert(makeNode(pfx, val), false)
 		return
@@ -44,6 +47,8 @@ func (t *Table) Insert(pfx netip.Prefix, val any) {
 // InsertImmutable adds pfx to the table with value val, returning a new table.
 // If pfx is already present in the table, its value is set to val.
 func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table {
+	pfx = pfx.Masked() // always canonicalize!
+
 	if pfx.Addr().Is4() {
 		t.root4 = t.root4.insert(makeNode(pfx, val), true)
 		return &t
@@ -373,6 +378,8 @@ func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok 
 //	    rtbl.LookupPrefix(192.168.0.0/16)     returns (192.168.0.0/16, <value>, true)
 //	    rtbl.LookupPrefix(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
 func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
+	pfx = pfx.Masked() // always canonicalize!
+
 	if pfx.Addr().Is4() {
 		// don't return the depth
 		lpm, value, ok, _ = t.root4.lpmCIDR(pfx, 0)
@@ -600,25 +607,14 @@ func compare(a, b netip.Prefix) int {
 		return 0
 	}
 
-	// compare left points of cidrs
+	// compare left points of (normalized) cidrs
 	ll := a.Addr().Compare(b.Addr())
 
 	if ll != 0 {
 		return ll
 	}
 
-	// ll == 0, sort superset to the left
-	aBits := a.Bits()
-	bBits := b.Bits()
-
-	switch {
-	case aBits < bBits:
-		return -1
-	case aBits > bBits:
-		return 1
-	}
-
-	return 0
+	return cmp.Compare(a.Bits(), b.Bits())
 }
 
 // cmpRR compares the prefixes last address.

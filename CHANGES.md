@@ -1,6 +1,6 @@
 v0.3.0 ...
     * API CHANGE!!!
-    * simplified the names of the standard methods 
+    * simplified the names of the standard methods
 
 v0.2.1 Fri Dec 29 23:47:49 2023 +0100
     * update to latest extnetip version
