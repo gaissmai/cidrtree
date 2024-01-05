@@ -24,7 +24,7 @@ var intMap = map[int]string{
 	1_000_000: "1_000_000",
 }
 
-func BenchmarkLookupIP(b *testing.B) {
+func BenchmarkLookup(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
 		rt := new(cidrtree.Table)
 		cidrs := shuffleFullTable(k)
@@ -44,7 +44,7 @@ func BenchmarkLookupIP(b *testing.B) {
 	}
 }
 
-func BenchmarkLookupCIDR(b *testing.B) {
+func BenchmarkLookupPrefix(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
 		rt := new(cidrtree.Table)
 		cidrs := shuffleFullTable(k)
@@ -63,7 +63,7 @@ func BenchmarkLookupCIDR(b *testing.B) {
 	}
 }
 
-func BenchmarkNew(b *testing.B) {
+func BenchmarkInsertImmutable(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
 		cidrs := shuffleFullTable(k)
 		name := fmt.Sprintf("%10s", intMap[k])
@@ -82,7 +82,7 @@ func BenchmarkClone(b *testing.B) {
 	for k := 1; k <= 1_000_000; k *= 10 {
 		rt := new(cidrtree.Table)
 		for _, cidr := range shuffleFullTable(k) {
-			rt = rt.InsertImmutable(cidr, nil)
+			rt.Insert(cidr, nil)
 		}
 		name := fmt.Sprintf("%10s", intMap[k])
 		b.ResetTimer()
@@ -99,25 +99,7 @@ func BenchmarkInsert(b *testing.B) {
 		rt := new(cidrtree.Table)
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
-			rt = rt.InsertImmutable(cidr, 0)
-		}
-		probe := routes[mrand.Intn(len(routes))]
-		name := fmt.Sprintf("Into%10s", intMap[k])
-		b.ResetTimer()
-		b.Run(name, func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
-				_ = rt.InsertImmutable(probe.cidr, 0)
-			}
-		})
-	}
-}
-
-func BenchmarkInsertMutable(b *testing.B) {
-	for k := 1; k <= 1_000_000; k *= 10 {
-		rt := new(cidrtree.Table)
-		cidrs := shuffleFullTable(k)
-		for _, cidr := range cidrs {
-			rt = rt.InsertImmutable(cidr, 0)
+			rt.Insert(cidr, 0)
 		}
 		probe := routes[mrand.Intn(len(routes))]
 		name := fmt.Sprintf("Into%10s", intMap[k])
@@ -135,26 +117,7 @@ func BenchmarkDelete(b *testing.B) {
 		rt := new(cidrtree.Table)
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
-			rt = rt.InsertImmutable(cidr, nil)
-		}
-		probe := routes[mrand.Intn(len(routes))]
-		name := fmt.Sprintf("From%10s", intMap[k])
-
-		b.ResetTimer()
-		b.Run(name, func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
-				_, _ = rt.DeleteImmutable(probe.cidr)
-			}
-		})
-	}
-}
-
-func BenchmarkDeleteMutable(b *testing.B) {
-	for k := 1; k <= 1_000_000; k *= 10 {
-		rt := new(cidrtree.Table)
-		cidrs := shuffleFullTable(k)
-		for _, cidr := range cidrs {
-			rt = rt.InsertImmutable(cidr, nil)
+			rt.Insert(cidr, nil)
 		}
 		probe := routes[mrand.Intn(len(routes))]
 		name := fmt.Sprintf("From%10s", intMap[k])
@@ -163,6 +126,25 @@ func BenchmarkDeleteMutable(b *testing.B) {
 		b.Run(name, func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				_ = rt.Delete(probe.cidr)
+			}
+		})
+	}
+}
+
+func BenchmarkDeleteImmutable(b *testing.B) {
+	for k := 1; k <= 1_000_000; k *= 10 {
+		rt := new(cidrtree.Table)
+		cidrs := shuffleFullTable(k)
+		for _, cidr := range cidrs {
+			rt.Insert(cidr, nil)
+		}
+		probe := routes[mrand.Intn(len(routes))]
+		name := fmt.Sprintf("From%10s", intMap[k])
+
+		b.ResetTimer()
+		b.Run(name, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				_, _ = rt.DeleteImmutable(probe.cidr)
 			}
 		})
 	}

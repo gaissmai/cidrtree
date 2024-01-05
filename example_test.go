@@ -8,29 +8,29 @@ import (
 	"github.com/gaissmai/cidrtree"
 )
 
-func a(s string) netip.Addr {
+func addr(s string) netip.Addr {
 	return netip.MustParseAddr(s)
 }
 
-func p(s string) netip.Prefix {
+func prfx(s string) netip.Prefix {
 	return netip.MustParsePrefix(s)
 }
 
 var input = []netip.Prefix{
-	p("fe80::/10"),
-	p("172.16.0.0/12"),
-	p("10.0.0.0/24"),
-	p("::1/128"),
-	p("192.168.0.0/16"),
-	p("10.0.0.0/8"),
-	p("::/0"),
-	p("10.0.1.0/24"),
-	p("169.254.0.0/16"),
-	p("2000::/3"),
-	p("2001:db8::/32"),
-	p("127.0.0.0/8"),
-	p("127.0.0.1/32"),
-	p("192.168.1.0/24"),
+	prfx("fe80::/10"),
+	prfx("172.16.0.0/12"),
+	prfx("10.0.0.0/24"),
+	prfx("::1/128"),
+	prfx("192.168.0.0/16"),
+	prfx("10.0.0.0/8"),
+	prfx("::/0"),
+	prfx("10.0.1.0/24"),
+	prfx("169.254.0.0/16"),
+	prfx("2000::/3"),
+	prfx("2001:db8::/32"),
+	prfx("127.0.0.0/8"),
+	prfx("127.0.0.1/32"),
+	prfx("192.168.1.0/24"),
 }
 
 func ExampleTable_Lookup() {
@@ -42,15 +42,15 @@ func ExampleTable_Lookup() {
 
 	fmt.Println()
 
-	ip := a("42.0.0.0")
+	ip := addr("42.0.0.0")
 	lpm, value, ok := rtbl.Lookup(ip)
 	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
 
-	ip = a("10.0.1.17")
+	ip = addr("10.0.1.17")
 	lpm, value, ok = rtbl.Lookup(ip)
 	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
 
-	ip = a("2001:7c0:3100:1::111")
+	ip = addr("2001:7c0:3100:1::111")
 	lpm, value, ok = rtbl.Lookup(ip)
 	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
 

@@ -44,7 +44,7 @@ var routes = makeRoutes(routesStr)
 func makeRoutes(rs []routeStr) []route {
 	var routes []route
 	for _, s := range rs {
-		routes = append(routes, route{netip.MustParsePrefix(s.cidr), netip.MustParseAddr(s.nextHop)})
+		routes = append(routes, route{prfx(s.cidr), addr(s.nextHop)})
 	}
 	return routes
 }
@@ -127,7 +127,7 @@ func TestZeroValue(t *testing.T) {
 	}
 }
 
-func TestInsert(t *testing.T) {
+func TestInsertImmutable(t *testing.T) {
 	t.Parallel()
 	rtbl := new(cidrtree.Table)
 
@@ -145,7 +145,7 @@ func TestDupInsert(t *testing.T) {
 	rtbl := new(cidrtree.Table)
 
 	for _, route := range routes {
-		rtbl = rtbl.InsertImmutable(route.cidr, route.nextHop)
+		rtbl.Insert(route.cidr, route.nextHop)
 	}
 
 	for _, dupe := range routes {
@@ -181,7 +181,7 @@ func TestDupInsert(t *testing.T) {
 	}
 }
 
-func TestInsertMutable(t *testing.T) {
+func TestInsert(t *testing.T) {
 	t.Parallel()
 	rtbl := new(cidrtree.Table)
 
@@ -259,7 +259,7 @@ func TestMutable(t *testing.T) {
 	}
 	rtbl2 = rtbl1.Clone()
 
-	probe = route{cidr: netip.MustParsePrefix("1.2.3.4/17")}
+	probe = route{cidr: prfx("1.2.3.4/17")}
 	rtbl1.Insert(probe.cidr, probe.nextHop)
 
 	if reflect.DeepEqual(rtbl1, rtbl2) {
@@ -271,7 +271,7 @@ func TestMutable(t *testing.T) {
 	}
 }
 
-func TestDelete(t *testing.T) {
+func TestDeleteImmutable(t *testing.T) {
 	t.Parallel()
 
 	rtbl := new(cidrtree.Table)
@@ -296,7 +296,7 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestDeleteMutable(t *testing.T) {
+func TestDelete(t *testing.T) {
 	t.Parallel()
 
 	rtbl := new(cidrtree.Table)
@@ -334,39 +334,39 @@ func TestLookupIP(t *testing.T) {
 		wantOK bool
 	}{
 		{
-			ip:     netip.MustParseAddr("10.0.1.17"),
-			want:   netip.MustParsePrefix("10.0.1.0/24"),
-			want2:  netip.MustParseAddr("203.0.113.0"),
+			ip:     addr("10.0.1.17"),
+			want:   prfx("10.0.1.0/24"),
+			want2:  addr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     netip.MustParseAddr("10.2.3.4"),
-			want:   netip.MustParsePrefix("10.0.0.0/8"),
-			want2:  netip.MustParseAddr("203.0.113.0"),
+			ip:     addr("10.2.3.4"),
+			want:   prfx("10.0.0.0/8"),
+			want2:  addr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     netip.MustParseAddr("12.0.0.0"),
+			ip:     addr("12.0.0.0"),
 			want:   netip.Prefix{},
 			want2:  netip.Addr{},
 			wantOK: false,
 		},
 		{
-			ip:     netip.MustParseAddr("127.0.0.255"),
-			want:   netip.MustParsePrefix("127.0.0.0/8"),
-			want2:  netip.MustParseAddr("203.0.113.0"),
+			ip:     addr("127.0.0.255"),
+			want:   prfx("127.0.0.0/8"),
+			want2:  addr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     netip.MustParseAddr("::2"),
-			want:   netip.MustParsePrefix("::/0"),
-			want2:  netip.MustParseAddr("2001:db8::1"),
+			ip:     addr("::2"),
+			want:   prfx("::/0"),
+			want2:  addr("2001:db8::1"),
 			wantOK: true,
 		},
 		{
-			ip:     netip.MustParseAddr("2001:db8:affe:cafe::dead:beef"),
-			want:   netip.MustParsePrefix("2001:db8::/32"),
-			want2:  netip.MustParseAddr("2001:db8::1"),
+			ip:     addr("2001:db8:affe:cafe::dead:beef"),
+			want:   prfx("2001:db8::/32"),
+			want2:  addr("2001:db8::1"),
 			wantOK: true,
 		},
 	}
@@ -377,12 +377,12 @@ func TestLookupIP(t *testing.T) {
 		}
 	}
 
-	prefix := netip.MustParsePrefix("10.0.0.0/8")
+	prefix := prfx("10.0.0.0/8")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	ip := netip.MustParseAddr("1.2.3.4")
+	ip := addr("1.2.3.4")
 	want := netip.Prefix{}
 	want2 := any(nil)
 
@@ -390,12 +390,12 @@ func TestLookupIP(t *testing.T) {
 		t.Errorf("Lookup(%v) = %v, %v, %v, want %v, %v, %v", ip, got, got2, ok, want, want2, false)
 	}
 
-	prefix = netip.MustParsePrefix("::/0")
+	prefix = prfx("::/0")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	ip = netip.MustParseAddr("::2")
+	ip = addr("::2")
 	want = netip.Prefix{}
 	want2 = any(nil)
 
@@ -440,39 +440,39 @@ func TestLookupCIDR(t *testing.T) {
 		wantOK    bool
 	}{
 		{
-			cidr:      netip.MustParsePrefix("10.0.1.0/29"),
-			wantCIDR:  netip.MustParsePrefix("10.0.1.0/24"),
-			wantValue: netip.MustParseAddr("203.0.113.0"),
+			cidr:      prfx("10.0.1.0/29"),
+			wantCIDR:  prfx("10.0.1.0/24"),
+			wantValue: addr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      netip.MustParsePrefix("10.2.0.0/16"),
-			wantCIDR:  netip.MustParsePrefix("10.0.0.0/8"),
-			wantValue: netip.MustParseAddr("203.0.113.0"),
+			cidr:      prfx("10.2.0.0/16"),
+			wantCIDR:  prfx("10.0.0.0/8"),
+			wantValue: addr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      netip.MustParsePrefix("12.0.0.0/8"),
+			cidr:      prfx("12.0.0.0/8"),
 			wantCIDR:  netip.Prefix{},
 			wantValue: netip.Addr{},
 			wantOK:    false,
 		},
 		{
-			cidr:      netip.MustParsePrefix("127.0.0.2/32"),
-			wantCIDR:  netip.MustParsePrefix("127.0.0.0/8"),
-			wantValue: netip.MustParseAddr("203.0.113.0"),
+			cidr:      prfx("127.0.0.2/32"),
+			wantCIDR:  prfx("127.0.0.0/8"),
+			wantValue: addr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      netip.MustParsePrefix("::2/96"),
-			wantCIDR:  netip.MustParsePrefix("::/0"),
-			wantValue: netip.MustParseAddr("2001:db8::1"),
+			cidr:      prfx("::2/96"),
+			wantCIDR:  prfx("::/0"),
+			wantValue: addr("2001:db8::1"),
 			wantOK:    true,
 		},
 		{
-			cidr:      netip.MustParsePrefix("2001:db8:affe:cafe:dead:beef::/96"),
-			wantCIDR:  netip.MustParsePrefix("2001:db8::/32"),
-			wantValue: netip.MustParseAddr("2001:db8::1"),
+			cidr:      prfx("2001:db8:affe:cafe:dead:beef::/96"),
+			wantCIDR:  prfx("2001:db8::/32"),
+			wantValue: addr("2001:db8::1"),
 			wantOK:    true,
 		},
 	}
@@ -483,12 +483,12 @@ func TestLookupCIDR(t *testing.T) {
 		}
 	}
 
-	prefix := netip.MustParsePrefix("10.0.0.0/8")
+	prefix := prfx("10.0.0.0/8")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	cidr := netip.MustParsePrefix("10.2.0.0/16")
+	cidr := prfx("10.2.0.0/16")
 	wantCIDR := netip.Prefix{}
 	wantValue := any(nil)
 
@@ -496,12 +496,12 @@ func TestLookupCIDR(t *testing.T) {
 		t.Errorf("LookupCIDR(%v) = %v, %v, %v, want %v, %v, %v", cidr, got, got2, ok, wantCIDR, wantValue, false)
 	}
 
-	prefix = netip.MustParsePrefix("::/0")
+	prefix = prfx("::/0")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	cidr = netip.MustParsePrefix("::2/96")
+	cidr = prfx("::2/96")
 	wantCIDR = netip.Prefix{}
 	wantValue = any(nil)
 
@@ -629,7 +629,7 @@ func TestWalkStartStop(t *testing.T) {
 			// skip
 			return true
 		}
-		if pfx == netip.MustParsePrefix("fc00::/7") {
+		if pfx == prfx("fc00::/7") {
 			// stop
 			return false
 		}
