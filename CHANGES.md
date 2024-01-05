@@ -1,5 +1,6 @@
 v0.3.0 ...
     * API CHANGE!!!
+    * bump go version to 1.21 (for stdlib cmp)
     * simplified the names of the standard methods
 
 v0.2.1 Fri Dec 29 23:47:49 2023 +0100

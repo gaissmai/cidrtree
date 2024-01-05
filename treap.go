@@ -273,31 +273,6 @@ func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
 //
 // Lookup does not allocate memory.
-//
-//	example:
-//
-//	▼
-//	├─ 10.0.0.0/8
-//	│  ├─ 10.0.0.0/24
-//	│  └─ 10.0.1.0/24
-//	├─ 127.0.0.0/8
-//	│  └─ 127.0.0.1/32
-//	├─ 169.254.0.0/16
-//	├─ 172.16.0.0/12
-//	└─ 192.168.0.0/16
-//	   └─ 192.168.1.0/24
-//	▼
-//	└─ ::/0
-//	   ├─ ::1/128
-//	   ├─ 2000::/3
-//	   │  └─ 2001:db8::/32
-//	   ├─ fc00::/7
-//	   ├─ fe80::/10
-//	   └─ ff00::/8
-//
-//	    rtbl.Lookup(42.0.0.0)             returns (netip.Prefix{}, <nil>,  false)
-//	    rtbl.Lookup(10.0.1.17)            returns (10.0.1.0/24,    <value>, true)
-//	    rtbl.Lookup(2001:7c0:3100:1::111) returns (2000::/3,       <value>, true)
 func (t Table) Lookup(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 	if ip.Is4() {
 		// don't return the depth
@@ -351,32 +326,6 @@ func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok 
 // If the prefix isn't equal or covered by any CIDR in the table, the zero value and false is returned.
 //
 // LookupPrefix does not allocate memory.
-//
-//	example:
-//
-//	▼
-//	├─ 10.0.0.0/8
-//	│  ├─ 10.0.0.0/24
-//	│  └─ 10.0.1.0/24
-//	├─ 127.0.0.0/8
-//	│  └─ 127.0.0.1/32
-//	├─ 169.254.0.0/16
-//	├─ 172.16.0.0/12
-//	└─ 192.168.0.0/16
-//	   └─ 192.168.1.0/24
-//	▼
-//	└─ ::/0
-//	   ├─ ::1/128
-//	   ├─ 2000::/3
-//	   │  └─ 2001:db8::/32
-//	   ├─ fc00::/7
-//	   ├─ fe80::/10
-//	   └─ ff00::/8
-//
-//	    rtbl.LookupPrefix(42.0.0.0/8)         returns (netip.Prefix{}, <nil>,  false)
-//	    rtbl.LookupPrefix(10.0.1.0/29)        returns (10.0.1.0/24,    <value>, true)
-//	    rtbl.LookupPrefix(192.168.0.0/16)     returns (192.168.0.0/16, <value>, true)
-//	    rtbl.LookupPrefix(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
 func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
 	pfx = pfx.Masked() // always canonicalize!
 

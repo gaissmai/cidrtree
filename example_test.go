@@ -8,29 +8,51 @@ import (
 	"github.com/gaissmai/cidrtree"
 )
 
-var input = []netip.Prefix{
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("10.0.0.0/24"),
-	netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("::/0"),
-	netip.MustParsePrefix("10.0.1.0/24"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("2000::/3"),
-	netip.MustParsePrefix("2001:db8::/32"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("127.0.0.1/32"),
-	netip.MustParsePrefix("192.168.1.0/24"),
+func a(s string) netip.Addr {
+	return netip.MustParseAddr(s)
 }
 
-func ExampleTable_Fprint() {
+func p(s string) netip.Prefix {
+	return netip.MustParsePrefix(s)
+}
+
+var input = []netip.Prefix{
+	p("fe80::/10"),
+	p("172.16.0.0/12"),
+	p("10.0.0.0/24"),
+	p("::1/128"),
+	p("192.168.0.0/16"),
+	p("10.0.0.0/8"),
+	p("::/0"),
+	p("10.0.1.0/24"),
+	p("169.254.0.0/16"),
+	p("2000::/3"),
+	p("2001:db8::/32"),
+	p("127.0.0.0/8"),
+	p("127.0.0.1/32"),
+	p("192.168.1.0/24"),
+}
+
+func ExampleTable_Lookup() {
 	rtbl := new(cidrtree.Table)
 	for _, cidr := range input {
 		rtbl.Insert(cidr, nil)
 	}
 	rtbl.Fprint(os.Stdout)
+
+	fmt.Println()
+
+	ip := a("42.0.0.0")
+	lpm, value, ok := rtbl.Lookup(ip)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
+
+	ip = a("10.0.1.17")
+	lpm, value, ok = rtbl.Lookup(ip)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
+
+	ip = a("2001:7c0:3100:1::111")
+	lpm, value, ok = rtbl.Lookup(ip)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
 
 	// Output:
 	// ▼
@@ -49,6 +71,10 @@ func ExampleTable_Fprint() {
 	//    ├─ 2000::/3 (<nil>)
 	//    │  └─ 2001:db8::/32 (<nil>)
 	//    └─ fe80::/10 (<nil>)
+	//
+	// Lookup: 42.0.0.0             lpm: invalid Prefix  value: <nil>, ok: false
+	// Lookup: 10.0.1.17            lpm: 10.0.1.0/24     value: <nil>, ok: true
+	// Lookup: 2001:7c0:3100:1::111 lpm: 2000::/3        value: <nil>, ok: true
 }
 
 func ExampleTable_Walk() {
