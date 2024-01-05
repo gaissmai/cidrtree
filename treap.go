@@ -31,25 +31,25 @@ type node struct {
 	prio     uint64
 }
 
-// Insert adds pfx to the table with value val, returning a new table.
+// Insert adds pfx to the table with value val, changing the original table.
 // If pfx is already present in the table, its value is set to val.
-func (t Table) Insert(pfx netip.Prefix, val any) *Table {
+func (t *Table) Insert(pfx netip.Prefix, val any) {
+	if pfx.Addr().Is4() {
+		t.root4 = t.root4.insert(makeNode(pfx, val), false)
+		return
+	}
+	t.root6 = t.root6.insert(makeNode(pfx, val), false)
+}
+
+// InsertImmutable adds pfx to the table with value val, returning a new table.
+// If pfx is already present in the table, its value is set to val.
+func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table {
 	if pfx.Addr().Is4() {
 		t.root4 = t.root4.insert(makeNode(pfx, val), true)
 		return &t
 	}
 	t.root6 = t.root6.insert(makeNode(pfx, val), true)
 	return &t
-}
-
-// InsertMutable adds pfx to the table with value val, changing the original table.
-// If pfx is already present in the table, its value is set to val.
-func (t *Table) InsertMutable(pfx netip.Prefix, val any) {
-	if pfx.Addr().Is4() {
-		t.root4 = t.root4.insert(makeNode(pfx, val), false)
-		return
-	}
-	t.root6 = t.root6.insert(makeNode(pfx, val), false)
 }
 
 // insert into treap, changing nodes are copied, new treap is returned,
@@ -124,11 +124,11 @@ func (n *node) insert(m *node, immutable bool) *node {
 	return n
 }
 
-// Delete removes the cdir if it exists, returns the new table and true, false if not found.
-func (t Table) Delete(cidr netip.Prefix) (*Table, bool) {
-	cidr = cidr.Masked() // always canonicalize!
+// DeleteImmutable removes the prefix if it exists, returns the new table and true, false if not found.
+func (t Table) DeleteImmutable(pfx netip.Prefix) (*Table, bool) {
+	pfx = pfx.Masked() // always canonicalize!
 
-	is4 := cidr.Addr().Is4()
+	is4 := pfx.Addr().Is4()
 
 	n := t.root6
 	if is4 {
@@ -136,7 +136,7 @@ func (t Table) Delete(cidr netip.Prefix) (*Table, bool) {
 	}
 
 	// split/join must be immutable
-	l, m, r := n.split(cidr, true)
+	l, m, r := n.split(pfx, true)
 	n = l.join(r, true)
 
 	if is4 {
@@ -149,12 +149,11 @@ func (t Table) Delete(cidr netip.Prefix) (*Table, bool) {
 	return &t, ok
 }
 
-// DeleteMutable removes the cidr from table, returns true if it exists, false otherwise.
-// If the original table does not need to be preserved then this is much faster than the immutable delete.
-func (t *Table) DeleteMutable(cidr netip.Prefix) bool {
-	cidr = cidr.Masked() // always canonicalize!
+// Delete removes the prefix from table, returns true if it exists, false otherwise.
+func (t *Table) Delete(pfx netip.Prefix) bool {
+	pfx = pfx.Masked() // always canonicalize!
 
-	is4 := cidr.Addr().Is4()
+	is4 := pfx.Addr().Is4()
 
 	n := t.root6
 	if is4 {
@@ -162,7 +161,7 @@ func (t *Table) DeleteMutable(cidr netip.Prefix) bool {
 	}
 
 	// split/join is mutable
-	l, m, r := n.split(cidr, false)
+	l, m, r := n.split(pfx, false)
 	n = l.join(r, false)
 
 	if is4 {
@@ -174,17 +173,17 @@ func (t *Table) DeleteMutable(cidr netip.Prefix) bool {
 	return m != nil
 }
 
-// Union combines any two tables immutable and returns the combined table.
+// UnionImmutable combines any two tables immutable and returns the combined table.
 // If there are duplicate entries, the value is taken from the other table.
-func (t Table) Union(other *Table) *Table {
+func (t Table) UnionImmutable(other *Table) *Table {
 	t.root4 = t.root4.union(other.root4, true, true)
 	t.root6 = t.root6.union(other.root6, true, true)
 	return &t
 }
 
-// UnionMutable combines two tables, changing the receiver table.
+// Union combines two tables, changing the receiver table.
 // If there are duplicate entries, the value is taken from the other table.
-func (t *Table) UnionMutable(other *Table) {
+func (t *Table) Union(other *Table) {
 	t.root4 = t.root4.union(other.root4, true, false)
 	t.root6 = t.root6.union(other.root6, true, false)
 }
@@ -265,10 +264,10 @@ func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
 	return true
 }
 
-// LookupIP returns the longest-prefix-match (lpm) for given ip.
+// Lookup returns the longest-prefix-match (lpm) for given ip.
 // If the ip isn't covered by any CIDR, the zero value and false is returned.
 //
-// LookupIP does not allocate memory.
+// Lookup does not allocate memory.
 //
 //	example:
 //
@@ -291,10 +290,10 @@ func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
 //	   ├─ fe80::/10
 //	   └─ ff00::/8
 //
-//	    rtbl.LookupIP(42.0.0.0)             returns (netip.Prefix{}, <nil>,  false)
-//	    rtbl.LookupIP(10.0.1.17)            returns (10.0.1.0/24,    <value>, true)
-//	    rtbl.LookupIP(2001:7c0:3100:1::111) returns (2000::/3,       <value>, true)
-func (t Table) LookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
+//	    rtbl.Lookup(42.0.0.0)             returns (netip.Prefix{}, <nil>,  false)
+//	    rtbl.Lookup(10.0.1.17)            returns (10.0.1.0/24,    <value>, true)
+//	    rtbl.Lookup(2001:7c0:3100:1::111) returns (2000::/3,       <value>, true)
+func (t Table) Lookup(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
 	if ip.Is4() {
 		// don't return the depth
 		lpm, value, ok, _ = t.root4.lpmIP(ip, 0)
@@ -343,10 +342,10 @@ func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok 
 	return n.left.lpmIP(ip, depth+1)
 }
 
-// LookupCIDR returns the longest-prefix-match (lpm) for given prefix.
+// LookupPrefix returns the longest-prefix-match (lpm) for given prefix.
 // If the prefix isn't equal or covered by any CIDR in the table, the zero value and false is returned.
 //
-// LookupCIDR does not allocate memory.
+// LookupPrefix does not allocate memory.
 //
 //	example:
 //
@@ -369,11 +368,11 @@ func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok 
 //	   ├─ fe80::/10
 //	   └─ ff00::/8
 //
-//	    rtbl.LookupCIDR(42.0.0.0/8)         returns (netip.Prefix{}, <nil>,  false)
-//	    rtbl.LookupCIDR(10.0.1.0/29)        returns (10.0.1.0/24,    <value>, true)
-//	    rtbl.LookupCIDR(192.168.0.0/16)     returns (192.168.0.0/16, <value>, true)
-//	    rtbl.LookupCIDR(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
-func (t Table) LookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
+//	    rtbl.LookupPrefix(42.0.0.0/8)         returns (netip.Prefix{}, <nil>,  false)
+//	    rtbl.LookupPrefix(10.0.1.0/29)        returns (10.0.1.0/24,    <value>, true)
+//	    rtbl.LookupPrefix(192.168.0.0/16)     returns (192.168.0.0/16, <value>, true)
+//	    rtbl.LookupPrefix(2001:7c0:3100::/40) returns (2000::/3,       <value>, true)
+func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
 	if pfx.Addr().Is4() {
 		// don't return the depth
 		lpm, value, ok, _ = t.root4.lpmCIDR(pfx, 0)

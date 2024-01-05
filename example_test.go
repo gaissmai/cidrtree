@@ -28,7 +28,7 @@ var input = []netip.Prefix{
 func ExampleTable_Fprint() {
 	rtbl := new(cidrtree.Table)
 	for _, cidr := range input {
-		rtbl.InsertMutable(cidr, nil)
+		rtbl.Insert(cidr, nil)
 	}
 	rtbl.Fprint(os.Stdout)
 
@@ -59,7 +59,7 @@ func ExampleTable_Walk() {
 
 	rtbl := new(cidrtree.Table)
 	for _, cidr := range input {
-		rtbl.InsertMutable(cidr, nil)
+		rtbl.Insert(cidr, nil)
 	}
 	rtbl.Walk(cb)
 

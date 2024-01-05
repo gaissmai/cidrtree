@@ -8,7 +8,7 @@
 
 ## !!! ATTENTION, API HAS CHANGED
 
-The API has changed from v0.1.4 to v0.2.0.
+The API has changed from v2.0.0 to v0.3.0.
 
 ## Overview
 
@@ -28,17 +28,17 @@ but explicit for CIDRs. It has a narrow focus with a specialized API for IP rout
   type Table struct { // Has unexported fields.  }
     Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
 
-  func (t Table) LookupIP(ip netip.Addr) (lpm netip.Prefix, value any, ok bool)
-  func (t Table) LookupCIDR(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool)
+  func (t Table) Lookup(ip netip.Addr) (lpm netip.Prefix, value any, ok bool)
+  func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool)
 
-  func (t Table) Insert(pfx netip.Prefix, val any) *Table
-  func (t Table) Delete(cidr netip.Prefix) (*Table, bool)
-  func (t Table) Union(other *Table) *Table
+  func (t *Table) Insert(pfx netip.Prefix, val any)
+  func (t *Table) Delete(pfx netip.Prefix) bool
+  func (t *Table) Union(other *Table)
+
+  func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table
+  func (t Table) DeleteImmutable(pfx netip.Prefix) (*Table, bool)
+  func (t Table) UnionImmutable(other *Table) *Table
   func (t Table) Clone() *Table
-
-  func (t *Table) InsertMutable(pfx netip.Prefix, val any)
-  func (t *Table) DeleteMutable(cidr netip.Prefix) bool
-  func (t *Table) UnionMutable(other *Table)
 
   func (t Table) String() string
   func (t Table) Fprint(w io.Writer) error

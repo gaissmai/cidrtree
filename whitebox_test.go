@@ -15,8 +15,8 @@ import (
 func TestFprintBST(t *testing.T) {
 	rtbl := new(Table)
 	for i := 1; i <= 48; i++ {
-		rtbl.InsertMutable(randPfx4(), nil)
-		rtbl.InsertMutable(randPfx6(), nil)
+		rtbl.Insert(randPfx4(), nil)
+		rtbl.Insert(randPfx6(), nil)
 	}
 	size, maxDepth, average, deviation := rtbl.statistics(skip6)
 	t.Logf("v4:  size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
@@ -41,7 +41,7 @@ func TestStatisticsRandom(t *testing.T) {
 	for i := 10; i <= 100_000; i *= 10 {
 		rtbl := new(Table)
 		for c := 0; c <= i; c++ {
-			rtbl.InsertMutable(randPfx(), nil)
+			rtbl.Insert(randPfx(), nil)
 		}
 		size, maxDepth, average, deviation := rtbl.statistics(skip6)
 		t.Logf("v4:  size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
@@ -59,7 +59,7 @@ func TestStatisticsRandom(t *testing.T) {
 func TestStatisticsFullTable(t *testing.T) {
 	rtbl := new(Table)
 	for _, cidr := range fullTable {
-		rtbl.InsertMutable(cidr, nil)
+		rtbl.Insert(cidr, nil)
 	}
 
 	size, maxDepth, average, deviation := rtbl.statistics(skip6)
@@ -82,7 +82,7 @@ func TestLPMRandom(t *testing.T) {
 	for i := 10; i <= 100_000; i *= 10 {
 		rtbl := new(Table)
 		for c := 0; c <= i; c++ {
-			rtbl.InsertMutable(randPfx(), nil)
+			rtbl.Insert(randPfx(), nil)
 		}
 
 		addr := randAddr()
@@ -108,13 +108,13 @@ func TestLPMFullTableWithDefaultRoutes(t *testing.T) {
 
 	rtbl := new(Table)
 	for _, cidr := range fullTable {
-		rtbl.InsertMutable(cidr, nil)
+		rtbl.Insert(cidr, nil)
 	}
 	dg4 := netip.MustParsePrefix("0.0.0.0/0")
 	dg6 := netip.MustParsePrefix("::/0")
 
-	rtbl.InsertMutable(dg4, nil)
-	rtbl.InsertMutable(dg6, nil)
+	rtbl.Insert(dg4, nil)
+	rtbl.Insert(dg6, nil)
 
 	size, maxDepth, average, deviation = rtbl.statistics(skip6)
 	t.Logf("FullTableV4: size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
