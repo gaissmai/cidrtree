@@ -180,7 +180,7 @@ func (t *Table) Delete(pfx netip.Prefix) bool {
 
 // UnionImmutable combines any two tables immutable and returns the combined table.
 // If there are duplicate entries, the value is taken from the other table.
-func (t Table) UnionImmutable(other *Table) *Table {
+func (t Table) UnionImmutable(other Table) *Table {
 	t.root4 = t.root4.union(other.root4, true, true)
 	t.root6 = t.root6.union(other.root6, true, true)
 	return &t
@@ -188,7 +188,7 @@ func (t Table) UnionImmutable(other *Table) *Table {
 
 // Union combines two tables, changing the receiver table.
 // If there are duplicate entries, the value is taken from the other table.
-func (t *Table) Union(other *Table) {
+func (t *Table) Union(other Table) {
 	t.root4 = t.root4.union(other.root4, true, false)
 	t.root6 = t.root6.union(other.root6, true, false)
 }

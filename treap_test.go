@@ -122,7 +122,7 @@ func TestZeroValue(t *testing.T) {
 		t.Errorf("LookupCIDR(), got: %v, want: false", ok)
 	}
 
-	if rtbl := zeroTable.UnionImmutable(&zeroTable); *rtbl != zeroTable {
+	if rtbl := zeroTable.UnionImmutable(zeroTable); *rtbl != zeroTable {
 		t.Errorf("Union(), got: %#v, want: %#v", rtbl, &zeroTable)
 	}
 }
@@ -533,18 +533,18 @@ func TestUnion(t *testing.T) {
 		rtbl2.Insert(route.cidr, route.nextHop)
 	}
 
-	rtbl.Union(rtbl2)
+	rtbl.Union(*rtbl2)
 	if rtbl.String() != asTopoStr {
 		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
 
 	clone := rtbl.Clone()
-	rtbl.Union(new(cidrtree.Table))
+	rtbl.Union(cidrtree.Table{})
 	if !reflect.DeepEqual(rtbl, clone) {
 		t.Fatal("UnionMutable with zero value changed original")
 	}
 
-	rtbl3 := rtbl.UnionImmutable(rtbl2)
+	rtbl3 := rtbl.UnionImmutable(*rtbl2)
 	if rtbl3.String() != asTopoStr {
 		t.Errorf("Fprint()\nwant:\n%sgot:\n%s", asTopoStr, rtbl.String())
 	}
@@ -561,7 +561,7 @@ func TestUnionDupe(t *testing.T) {
 	}
 	// both tables have identical CIDRs but with different values
 	// overwrite all values with value=2
-	rtbl1.Union(rtbl2)
+	rtbl1.Union(*rtbl2)
 
 	var wrongValue bool
 

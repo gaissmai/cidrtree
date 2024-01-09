@@ -8,7 +8,7 @@
 
 ## !!! ATTENTION, API HAS CHANGED
 
-The API has changed from v2.0.0 to v0.3.0.
+The API has changed from v0.3.0 to v0.4.0.
 
 ## Overview
 
@@ -33,11 +33,11 @@ but explicit for CIDRs. It has a narrow focus with a specialized API for IP rout
 
   func (t *Table) Insert(pfx netip.Prefix, val any)
   func (t *Table) Delete(pfx netip.Prefix) bool
-  func (t *Table) Union(other *Table)
+  func (t *Table) Union(other Table)
 
   func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table
   func (t Table) DeleteImmutable(pfx netip.Prefix) (*Table, bool)
-  func (t Table) UnionImmutable(other *Table) *Table
+  func (t Table) UnionImmutable(other Table) *Table
   func (t Table) Clone() *Table
 
   func (t Table) String() string
