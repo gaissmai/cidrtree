@@ -8,7 +8,7 @@
 
 ## !!! ATTENTION
 
-API currently not stable!
+API is currently not stable!
 
 ## Overview
 
@@ -16,8 +16,7 @@ API currently not stable!
 
 The implementation is based on treaps, which have been augmented here for CIDRs. Treaps are randomized, self-balancing binary search trees. Due to the nature of treaps the lookups (readers) and the update (writer) can be easily decoupled. This is the perfect fit for a software router or firewall.
 
-This package is a specialization of the more generic [interval package] of the same author,
-but explicit for CIDRs. It has a narrow focus with a specialized API for IP routing tables.
+This package is a specialization of the more generic [interval package] of the same author, but explicit for CIDRs. It has a narrow focus with a specialized API for IP routing tables.
 
 [interval package]: https://github.com/gaissmai/interval
 
@@ -25,23 +24,23 @@ but explicit for CIDRs. It has a narrow focus with a specialized API for IP rout
 ```go
   import "github.com/gaissmai/cidrtree"
 
-  type Table struct { // Has unexported fields.  }
+  type Table[V any] struct { // Has unexported fields.  }
     Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
 
-  func (t Table) Lookup(ip netip.Addr) (lpm netip.Prefix, value any, ok bool)
-  func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool)
+  func (t Table[V]) Lookup(ip netip.Addr) (lpm netip.Prefix, value V, ok bool)
+  func (t Table[V]) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value V, ok bool)
 
-  func (t *Table) Insert(pfx netip.Prefix, val any)
-  func (t *Table) Delete(pfx netip.Prefix) bool
-  func (t *Table) Union(other Table)
+  func (t *Table[V]) Insert(pfx netip.Prefix, value V)
+  func (t *Table[V]) Delete(pfx netip.Prefix) bool
+  func (t *Table[V]) Union(other Table[V])
 
-  func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table
-  func (t Table) DeleteImmutable(pfx netip.Prefix) (*Table, bool)
-  func (t Table) UnionImmutable(other Table) *Table
-  func (t Table) Clone() *Table
+  func (t Table[V]) InsertImmutable(pfx netip.Prefix, value V) *Table[V]
+  func (t Table[V]) DeleteImmutable(pfx netip.Prefix) (*Table[V], bool)
+  func (t Table[V]) UnionImmutable(other Table[V]) *Table[V]
+  func (t Table[V]) Clone() *Table[V]
 
-  func (t Table) String() string
-  func (t Table) Fprint(w io.Writer) error
+  func (t Table[V]) String() string
+  func (t Table[V]) Fprint(w io.Writer) error
 
-  func (t Table) Walk(cb func(pfx netip.Prefix, val any) bool)
+  func (t Table[V]) Walk(cb func(pfx netip.Prefix, value V) bool)
 ```

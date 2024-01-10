@@ -16,51 +16,165 @@ import (
 )
 
 // Table is an IPv4 and IPv6 routing table. The zero value is ready to use.
-type Table struct {
+type Table[V any] struct {
 	// make a treap for every IP version, the bits of the prefix are part of the weighted priority
-	root4 *node
-	root6 *node
+	root4 *node[V]
+	root6 *node[V]
 }
 
 // node is the recursive data structure of the treap.
-type node struct {
-	maxUpper *node // augment the treap, see also recalc()
-	left     *node
-	right    *node
-	value    any
+type node[V any] struct {
+	maxUpper *node[V] // augment the treap, see also recalc()
+	left     *node[V]
+	right    *node[V]
+	value    V
 	cidr     netip.Prefix
 	prio     uint64
 }
 
-// Insert adds pfx to the table with value val, changing the original table.
-// If pfx is already present in the table, its value is set to val.
-func (t *Table) Insert(pfx netip.Prefix, val any) {
-	pfx = pfx.Masked() // always canonicalize!
-
-	if pfx.Addr().Is4() {
-		t.root4 = t.root4.insert(makeNode(pfx, val), false)
+// Lookup returns the longest-prefix-match (lpm) for given ip.
+// If the ip isn't covered by any CIDR, the zero value and false is returned.
+//
+// Lookup does not allocate memory.
+func (t Table[V]) Lookup(ip netip.Addr) (lpm netip.Prefix, value V, ok bool) {
+	if ip.Is4() {
+		// don't return the depth
+		lpm, value, ok, _ = t.root4.lpmIP(ip, 0)
 		return
 	}
-	t.root6 = t.root6.insert(makeNode(pfx, val), false)
+	// don't return the depth
+	lpm, value, ok, _ = t.root6.lpmIP(ip, 0)
+	return
 }
 
-// InsertImmutable adds pfx to the table with value val, returning a new table.
-// If pfx is already present in the table, its value is set to val.
-func (t Table) InsertImmutable(pfx netip.Prefix, val any) *Table {
+// LookupPrefix returns the longest-prefix-match (lpm) for given prefix.
+// If the prefix isn't equal or covered by any CIDR in the table, the zero value and false is returned.
+//
+// LookupPrefix does not allocate memory.
+func (t Table[V]) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value V, ok bool) {
 	pfx = pfx.Masked() // always canonicalize!
 
 	if pfx.Addr().Is4() {
-		t.root4 = t.root4.insert(makeNode(pfx, val), true)
+		// don't return the depth
+		lpm, value, ok, _ = t.root4.lpmCIDR(pfx, 0)
+		return
+	}
+	// don't return the depth
+	lpm, value, ok, _ = t.root6.lpmCIDR(pfx, 0)
+	return
+}
+
+// Insert adds pfx to the routing table with value of generic type V.
+// If pfx is already present in the table, its value is set to the new value.
+func (t *Table[V]) Insert(pfx netip.Prefix, value V) {
+	pfx = pfx.Masked() // always canonicalize!
+
+	if pfx.Addr().Is4() {
+		t.root4 = t.root4.insert(makeNode(pfx, value), false)
+		return
+	}
+	t.root6 = t.root6.insert(makeNode(pfx, value), false)
+}
+
+// InsertImmutable adds pfx to the table with value of generic type V, returning a new table.
+// If pfx is already present in the table, its value is set to the new value.
+func (t Table[V]) InsertImmutable(pfx netip.Prefix, value V) *Table[V] {
+	pfx = pfx.Masked() // always canonicalize!
+
+	if pfx.Addr().Is4() {
+		t.root4 = t.root4.insert(makeNode(pfx, value), true)
 		return &t
 	}
-	t.root6 = t.root6.insert(makeNode(pfx, val), true)
+	t.root6 = t.root6.insert(makeNode(pfx, value), true)
 	return &t
+}
+
+// Delete removes the prefix from table, returns true if it exists, false otherwise.
+func (t *Table[V]) Delete(pfx netip.Prefix) bool {
+	pfx = pfx.Masked() // always canonicalize!
+
+	is4 := pfx.Addr().Is4()
+
+	n := t.root6
+	if is4 {
+		n = t.root4
+	}
+
+	// split/join is set to mutable
+	l, m, r := n.split(pfx, false)
+	n = l.join(r, false)
+
+	if is4 {
+		t.root4 = n
+	} else {
+		t.root6 = n
+	}
+
+	return m != nil
+}
+
+// DeleteImmutable removes the prefix if it exists, returns the new table and true, false if not found.
+func (t Table[V]) DeleteImmutable(pfx netip.Prefix) (*Table[V], bool) {
+	pfx = pfx.Masked() // always canonicalize!
+
+	is4 := pfx.Addr().Is4()
+
+	n := t.root6
+	if is4 {
+		n = t.root4
+	}
+
+	// split/join is set to immutable
+	l, m, r := n.split(pfx, true)
+	n = l.join(r, true)
+
+	if is4 {
+		t.root4 = n
+	} else {
+		t.root6 = n
+	}
+
+	ok := m != nil
+	return &t, ok
+}
+
+// Clone, deep cloning of the routing table.
+func (t Table[V]) Clone() *Table[V] {
+	t.root4 = t.root4.clone()
+	t.root6 = t.root6.clone()
+	return &t
+}
+
+// Union combines two tables, changing the receiver table.
+// If there are duplicate entries, the value is taken from the other table.
+func (t *Table[V]) Union(other Table[V]) {
+	t.root4 = t.root4.union(other.root4, true, false)
+	t.root6 = t.root6.union(other.root6, true, false)
+}
+
+// UnionImmutable combines any two tables immutable and returns the combined table.
+// If there are duplicate entries, the value is taken from the other table.
+func (t Table[V]) UnionImmutable(other Table[V]) *Table[V] {
+	t.root4 = t.root4.union(other.root4, true, true)
+	t.root6 = t.root6.union(other.root6, true, true)
+	return &t
+}
+
+// Walk iterates the cidrtree in ascending order.
+// The callback function is called with the prefix and value of the respective node and the depth in the tree.
+// If callback returns `false`, the iteration is aborted.
+func (t Table[V]) Walk(cb func(pfx netip.Prefix, value V) bool) {
+	if !t.root4.walk(cb) {
+		return
+	}
+
+	t.root6.walk(cb)
 }
 
 // insert into treap, changing nodes are copied, new treap is returned,
 // old treap is modified if immutable is false.
 // If node is already present in the table, its value is set to val.
-func (n *node) insert(m *node, immutable bool) *node {
+func (n *node[V]) insert(m *node[V], immutable bool) *node[V] {
 	if n == nil {
 		// recursion stop condition
 		return m
@@ -129,73 +243,9 @@ func (n *node) insert(m *node, immutable bool) *node {
 	return n
 }
 
-// DeleteImmutable removes the prefix if it exists, returns the new table and true, false if not found.
-func (t Table) DeleteImmutable(pfx netip.Prefix) (*Table, bool) {
-	pfx = pfx.Masked() // always canonicalize!
-
-	is4 := pfx.Addr().Is4()
-
-	n := t.root6
-	if is4 {
-		n = t.root4
-	}
-
-	// split/join must be immutable
-	l, m, r := n.split(pfx, true)
-	n = l.join(r, true)
-
-	if is4 {
-		t.root4 = n
-	} else {
-		t.root6 = n
-	}
-
-	ok := m != nil
-	return &t, ok
-}
-
-// Delete removes the prefix from table, returns true if it exists, false otherwise.
-func (t *Table) Delete(pfx netip.Prefix) bool {
-	pfx = pfx.Masked() // always canonicalize!
-
-	is4 := pfx.Addr().Is4()
-
-	n := t.root6
-	if is4 {
-		n = t.root4
-	}
-
-	// split/join is mutable
-	l, m, r := n.split(pfx, false)
-	n = l.join(r, false)
-
-	if is4 {
-		t.root4 = n
-	} else {
-		t.root6 = n
-	}
-
-	return m != nil
-}
-
-// UnionImmutable combines any two tables immutable and returns the combined table.
-// If there are duplicate entries, the value is taken from the other table.
-func (t Table) UnionImmutable(other Table) *Table {
-	t.root4 = t.root4.union(other.root4, true, true)
-	t.root6 = t.root6.union(other.root6, true, true)
-	return &t
-}
-
-// Union combines two tables, changing the receiver table.
-// If there are duplicate entries, the value is taken from the other table.
-func (t *Table) Union(other Table) {
-	t.root4 = t.root4.union(other.root4, true, false)
-	t.root6 = t.root6.union(other.root6, true, false)
-}
-
 // union two treaps.
 // flag overwrite isn't public but needed as input for rec-descent calls, see below when trepa are swapped.
-func (n *node) union(b *node, overwrite bool, immutable bool) *node {
+func (n *node[V]) union(b *node[V], overwrite bool, immutable bool) *node[V] {
 	// recursion stop condition
 	if n == nil {
 		return b
@@ -234,19 +284,8 @@ func (n *node) union(b *node, overwrite bool, immutable bool) *node {
 	return n
 }
 
-// Walk iterates the cidrtree in ascending order.
-// The callback function is called with the prefix and value of the respective node and the depth in the tree.
-// If callback returns `false`, the iteration is aborted.
-func (t Table) Walk(cb func(pfx netip.Prefix, val any) bool) {
-	if !t.root4.walk(cb) {
-		return
-	}
-
-	t.root6.walk(cb)
-}
-
 // walk tree in ascending prefix order.
-func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
+func (n *node[V]) walk(cb func(netip.Prefix, V) bool) bool {
 	if n == nil {
 		return true
 	}
@@ -269,23 +308,8 @@ func (n *node) walk(cb func(netip.Prefix, any) bool) bool {
 	return true
 }
 
-// Lookup returns the longest-prefix-match (lpm) for given ip.
-// If the ip isn't covered by any CIDR, the zero value and false is returned.
-//
-// Lookup does not allocate memory.
-func (t Table) Lookup(ip netip.Addr) (lpm netip.Prefix, value any, ok bool) {
-	if ip.Is4() {
-		// don't return the depth
-		lpm, value, ok, _ = t.root4.lpmIP(ip, 0)
-		return
-	}
-	// don't return the depth
-	lpm, value, ok, _ = t.root6.lpmIP(ip, 0)
-	return
-}
-
 // lpmIP rec-descent
-func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok bool, atDepth int) {
+func (n *node[V]) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value V, ok bool, atDepth int) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -322,25 +346,8 @@ func (n *node) lpmIP(ip netip.Addr, depth int) (lpm netip.Prefix, value any, ok 
 	return n.left.lpmIP(ip, depth+1)
 }
 
-// LookupPrefix returns the longest-prefix-match (lpm) for given prefix.
-// If the prefix isn't equal or covered by any CIDR in the table, the zero value and false is returned.
-//
-// LookupPrefix does not allocate memory.
-func (t Table) LookupPrefix(pfx netip.Prefix) (lpm netip.Prefix, value any, ok bool) {
-	pfx = pfx.Masked() // always canonicalize!
-
-	if pfx.Addr().Is4() {
-		// don't return the depth
-		lpm, value, ok, _ = t.root4.lpmCIDR(pfx, 0)
-		return
-	}
-	// don't return the depth
-	lpm, value, ok, _ = t.root6.lpmCIDR(pfx, 0)
-	return
-}
-
 // lpmCIDR rec-descent
-func (n *node) lpmCIDR(pfx netip.Prefix, depth int) (lpm netip.Prefix, value any, ok bool, atDepth int) {
+func (n *node[V]) lpmCIDR(pfx netip.Prefix, depth int) (lpm netip.Prefix, value V, ok bool, atDepth int) {
 	for {
 		// recursion stop condition
 		if n == nil {
@@ -392,14 +399,7 @@ func (n *node) lpmCIDR(pfx netip.Prefix, depth int) (lpm netip.Prefix, value any
 	return n.left.lpmCIDR(pfx, depth+1)
 }
 
-// Clone, deep cloning of the routing table.
-func (t Table) Clone() *Table {
-	t.root4 = t.root4.clone()
-	t.root6 = t.root6.clone()
-	return &t
-}
-
-func (n *node) clone() *node {
+func (n *node[V]) clone() *node[V] {
 	if n == nil {
 		return n
 	}
@@ -421,7 +421,7 @@ func (n *node) clone() *node {
 // and greater-than the provided cidr (BST key). The resulting nodes are
 // properly formed treaps or nil.
 // If the split must be immutable, first copy concerned nodes.
-func (n *node) split(cidr netip.Prefix, immutable bool) (left, mid, right *node) {
+func (n *node[V]) split(cidr netip.Prefix, immutable bool) (left, mid, right *node[V]) {
 	// recursion stop condition
 	if n == nil {
 		return nil, nil, nil
@@ -472,7 +472,7 @@ func (n *node) split(cidr netip.Prefix, immutable bool) (left, mid, right *node)
 
 // join combines two disjunct treaps. All nodes in treap n have keys <= that of treap m
 // for this algorithm to work correctly. If the join must be immutable, first copy concerned nodes.
-func (n *node) join(m *node, immutable bool) *node {
+func (n *node[V]) join(m *node[V], immutable bool) *node[V] {
 	// recursion stop condition
 	if n == nil {
 		return m
@@ -511,17 +511,17 @@ func (n *node) join(m *node, immutable bool) *node {
 // ###########################################################
 
 // makeNode, create new node with cidr.
-func makeNode(pfx netip.Prefix, val any) *node {
-	n := new(node)
+func makeNode[V any](pfx netip.Prefix, value V) *node[V] {
+	n := new(node[V])
 	n.cidr = pfx.Masked() // always store the prefix in normalized form
-	n.value = val
+	n.value = value
 	n.prio = mrand.Uint64()
 	n.recalc() // init the augmented field with recalc
 	return n
 }
 
 // copyNode, make a shallow copy of the pointers and the cidr.
-func (n *node) copyNode() *node {
+func (n *node[V]) copyNode() *node[V] {
 	c := *n
 	return &c
 }
@@ -529,7 +529,7 @@ func (n *node) copyNode() *node {
 // recalc the augmented fields in treap node after each creation/modification
 // with values in descendants.
 // Only one level deeper must be considered. The treap datastructure is very easy to augment.
-func (n *node) recalc() {
+func (n *node[V]) recalc() {
 	if n == nil {
 		return
 	}

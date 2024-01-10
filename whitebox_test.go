@@ -12,8 +12,8 @@ import (
 	"testing"
 )
 
-func TestFprintBST(t *testing.T) {
-	rtbl := new(Table)
+func TestFprintBSTVerbose(t *testing.T) {
+	rtbl := new(Table[any])
 	for i := 1; i <= 48; i++ {
 		rtbl.Insert(randPfx4(), nil)
 		rtbl.Insert(randPfx6(), nil)
@@ -37,9 +37,9 @@ func TestFprintBST(t *testing.T) {
 	t.Log(w.String())
 }
 
-func TestStatisticsRandom(t *testing.T) {
+func TestStatisticsRandomVerbose(t *testing.T) {
 	for i := 10; i <= 100_000; i *= 10 {
-		rtbl := new(Table)
+		rtbl := new(Table[any])
 		for c := 0; c <= i; c++ {
 			rtbl.Insert(randPfx(), nil)
 		}
@@ -56,8 +56,8 @@ func TestStatisticsRandom(t *testing.T) {
 	}
 }
 
-func TestStatisticsFullTable(t *testing.T) {
-	rtbl := new(Table)
+func TestStatisticsFullTableVerbose(t *testing.T) {
+	rtbl := new(Table[any])
 	for _, cidr := range fullTable {
 		rtbl.Insert(cidr, nil)
 	}
@@ -72,7 +72,7 @@ func TestStatisticsFullTable(t *testing.T) {
 	t.Logf("FullTable:   size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 }
 
-func TestLPMRandom(t *testing.T) {
+func TestLPMRandomVerbose(t *testing.T) {
 	var size int
 	var depth int
 	var maxDepth int
@@ -80,7 +80,7 @@ func TestLPMRandom(t *testing.T) {
 	var lpm netip.Prefix
 
 	for i := 10; i <= 100_000; i *= 10 {
-		rtbl := new(Table)
+		rtbl := new(Table[any])
 		for c := 0; c <= i; c++ {
 			rtbl.Insert(randPfx(), nil)
 		}
@@ -97,7 +97,7 @@ func TestLPMRandom(t *testing.T) {
 	}
 }
 
-func TestLPMFullTableWithDefaultRoutes(t *testing.T) {
+func TestLPMFullTableWithDefaultRoutesVerbose(t *testing.T) {
 	var size int
 	var depth int
 	var maxDepth int
@@ -106,7 +106,7 @@ func TestLPMFullTableWithDefaultRoutes(t *testing.T) {
 	var addr netip.Addr
 	var lpm netip.Prefix
 
-	rtbl := new(Table)
+	rtbl := new(Table[any])
 	for _, cidr := range fullTable {
 		rtbl.Insert(cidr, nil)
 	}

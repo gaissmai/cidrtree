@@ -8,73 +8,76 @@ import (
 	"github.com/gaissmai/cidrtree"
 )
 
-func addr(s string) netip.Addr {
+func mustAddr(s string) netip.Addr {
 	return netip.MustParseAddr(s)
 }
 
-func prfx(s string) netip.Prefix {
+func mustPfx(s string) netip.Prefix {
 	return netip.MustParsePrefix(s)
 }
 
-var input = []netip.Prefix{
-	prfx("fe80::/10"),
-	prfx("172.16.0.0/12"),
-	prfx("10.0.0.0/24"),
-	prfx("::1/128"),
-	prfx("192.168.0.0/16"),
-	prfx("10.0.0.0/8"),
-	prfx("::/0"),
-	prfx("10.0.1.0/24"),
-	prfx("169.254.0.0/16"),
-	prfx("2000::/3"),
-	prfx("2001:db8::/32"),
-	prfx("127.0.0.0/8"),
-	prfx("127.0.0.1/32"),
-	prfx("192.168.1.0/24"),
+var input = []struct {
+	cidr    netip.Prefix
+	nextHop netip.Addr
+}{
+	{mustPfx("fe80::/10"), mustAddr("::1%lo")},
+	{mustPfx("172.16.0.0/12"), mustAddr("8.8.8.8")},
+	{mustPfx("10.0.0.0/24"), mustAddr("8.8.8.8")},
+	{mustPfx("::1/128"), mustAddr("::1%eth0")},
+	{mustPfx("192.168.0.0/16"), mustAddr("9.9.9.9")},
+	{mustPfx("10.0.0.0/8"), mustAddr("9.9.9.9")},
+	{mustPfx("::/0"), mustAddr("2001:db8::1")},
+	{mustPfx("10.0.1.0/24"), mustAddr("10.0.0.0")},
+	{mustPfx("169.254.0.0/16"), mustAddr("10.0.0.0")},
+	{mustPfx("2000::/3"), mustAddr("2001:db8::1")},
+	{mustPfx("2001:db8::/32"), mustAddr("2001:db8::1")},
+	{mustPfx("127.0.0.0/8"), mustAddr("127.0.0.1")},
+	{mustPfx("127.0.0.1/32"), mustAddr("127.0.0.1")},
+	{mustPfx("192.168.1.0/24"), mustAddr("127.0.0.1")},
 }
 
 func ExampleTable_Lookup() {
-	rtbl := new(cidrtree.Table)
-	for _, cidr := range input {
-		rtbl.Insert(cidr, nil)
+	rtbl := new(cidrtree.Table[netip.Addr])
+	for _, item := range input {
+		rtbl.Insert(item.cidr, item.nextHop)
 	}
 	rtbl.Fprint(os.Stdout)
 
 	fmt.Println()
 
-	ip := addr("42.0.0.0")
+	ip := mustAddr("42.0.0.0")
 	lpm, value, ok := rtbl.Lookup(ip)
-	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %11v, ok: %v\n", ip, lpm, value, ok)
 
-	ip = addr("10.0.1.17")
+	ip = mustAddr("10.0.1.17")
 	lpm, value, ok = rtbl.Lookup(ip)
-	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %11v, ok: %v\n", ip, lpm, value, ok)
 
-	ip = addr("2001:7c0:3100:1::111")
+	ip = mustAddr("2001:7c0:3100:1::111")
 	lpm, value, ok = rtbl.Lookup(ip)
-	fmt.Printf("Lookup: %-20v lpm: %-15v value: %v, ok: %v\n", ip, lpm, value, ok)
+	fmt.Printf("Lookup: %-20v lpm: %-15v value: %11v, ok: %v\n", ip, lpm, value, ok)
 
 	// Output:
 	// ▼
-	// ├─ 10.0.0.0/8 (<nil>)
-	// │  ├─ 10.0.0.0/24 (<nil>)
-	// │  └─ 10.0.1.0/24 (<nil>)
-	// ├─ 127.0.0.0/8 (<nil>)
-	// │  └─ 127.0.0.1/32 (<nil>)
-	// ├─ 169.254.0.0/16 (<nil>)
-	// ├─ 172.16.0.0/12 (<nil>)
-	// └─ 192.168.0.0/16 (<nil>)
-	//    └─ 192.168.1.0/24 (<nil>)
+	// ├─ 10.0.0.0/8 (9.9.9.9)
+	// │  ├─ 10.0.0.0/24 (8.8.8.8)
+	// │  └─ 10.0.1.0/24 (10.0.0.0)
+	// ├─ 127.0.0.0/8 (127.0.0.1)
+	// │  └─ 127.0.0.1/32 (127.0.0.1)
+	// ├─ 169.254.0.0/16 (10.0.0.0)
+	// ├─ 172.16.0.0/12 (8.8.8.8)
+	// └─ 192.168.0.0/16 (9.9.9.9)
+	//    └─ 192.168.1.0/24 (127.0.0.1)
 	// ▼
-	// └─ ::/0 (<nil>)
-	//    ├─ ::1/128 (<nil>)
-	//    ├─ 2000::/3 (<nil>)
-	//    │  └─ 2001:db8::/32 (<nil>)
-	//    └─ fe80::/10 (<nil>)
+	// └─ ::/0 (2001:db8::1)
+	//    ├─ ::1/128 (::1%eth0)
+	//    ├─ 2000::/3 (2001:db8::1)
+	//    │  └─ 2001:db8::/32 (2001:db8::1)
+	//    └─ fe80::/10 (::1%lo)
 	//
-	// Lookup: 42.0.0.0             lpm: invalid Prefix  value: <nil>, ok: false
-	// Lookup: 10.0.1.17            lpm: 10.0.1.0/24     value: <nil>, ok: true
-	// Lookup: 2001:7c0:3100:1::111 lpm: 2000::/3        value: <nil>, ok: true
+	// Lookup: 42.0.0.0             lpm: invalid Prefix  value:  invalid IP, ok: false
+	// Lookup: 10.0.1.17            lpm: 10.0.1.0/24     value:    10.0.0.0, ok: true
+	// Lookup: 2001:7c0:3100:1::111 lpm: 2000::/3        value: 2001:db8::1, ok: true
 }
 
 func ExampleTable_Walk() {
@@ -83,25 +86,25 @@ func ExampleTable_Walk() {
 		return true
 	}
 
-	rtbl := new(cidrtree.Table)
-	for _, cidr := range input {
-		rtbl.Insert(cidr, nil)
+	rtbl := new(cidrtree.Table[any])
+	for _, item := range input {
+		rtbl.Insert(item.cidr, item.nextHop)
 	}
 	rtbl.Walk(cb)
 
 	// Output:
-	// 10.0.0.0/8 (<nil>)
-	// 10.0.0.0/24 (<nil>)
-	// 10.0.1.0/24 (<nil>)
-	// 127.0.0.0/8 (<nil>)
-	// 127.0.0.1/32 (<nil>)
-	// 169.254.0.0/16 (<nil>)
-	// 172.16.0.0/12 (<nil>)
-	// 192.168.0.0/16 (<nil>)
-	// 192.168.1.0/24 (<nil>)
-	// ::/0 (<nil>)
-	// ::1/128 (<nil>)
-	// 2000::/3 (<nil>)
-	// 2001:db8::/32 (<nil>)
-	// fe80::/10 (<nil>)
+	// 10.0.0.0/8 (9.9.9.9)
+	// 10.0.0.0/24 (8.8.8.8)
+	// 10.0.1.0/24 (10.0.0.0)
+	// 127.0.0.0/8 (127.0.0.1)
+	// 127.0.0.1/32 (127.0.0.1)
+	// 169.254.0.0/16 (10.0.0.0)
+	// 172.16.0.0/12 (8.8.8.8)
+	// 192.168.0.0/16 (9.9.9.9)
+	// 192.168.1.0/24 (127.0.0.1)
+	// ::/0 (2001:db8::1)
+	// ::1/128 (::1%eth0)
+	// 2000::/3 (2001:db8::1)
+	// 2001:db8::/32 (2001:db8::1)
+	// fe80::/10 (::1%lo)
 }

@@ -25,7 +25,7 @@ var intMap = map[int]string{
 
 func BenchmarkLookup(b *testing.B) {
 	for k := 1; k <= 100_000; k *= 10 {
-		rt := new(cidrtree.Table)
+		rt := new(cidrtree.Table[any])
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
 			rt.Insert(cidr, nil)
@@ -45,7 +45,7 @@ func BenchmarkLookup(b *testing.B) {
 
 func BenchmarkLookupPrefix(b *testing.B) {
 	for k := 1; k <= 100_000; k *= 10 {
-		rt := new(cidrtree.Table)
+		rt := new(cidrtree.Table[any])
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
 			rt.Insert(cidr, nil)
@@ -64,7 +64,7 @@ func BenchmarkLookupPrefix(b *testing.B) {
 
 func BenchmarkClone(b *testing.B) {
 	for k := 1; k <= 100_000; k *= 10 {
-		rt := new(cidrtree.Table)
+		rt := new(cidrtree.Table[any])
 		for _, cidr := range shuffleFullTable(k) {
 			rt.Insert(cidr, nil)
 		}
@@ -80,7 +80,7 @@ func BenchmarkClone(b *testing.B) {
 
 func BenchmarkInsert(b *testing.B) {
 	for k := 1; k <= 100_000; k *= 10 {
-		rt := new(cidrtree.Table)
+		rt := new(cidrtree.Table[any])
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
 			rt.Insert(cidr, nil)
@@ -99,7 +99,7 @@ func BenchmarkInsert(b *testing.B) {
 
 func BenchmarkDelete(b *testing.B) {
 	for k := 1; k <= 100_000; k *= 10 {
-		rt := new(cidrtree.Table)
+		rt := new(cidrtree.Table[any])
 		cidrs := shuffleFullTable(k)
 		for _, cidr := range cidrs {
 			rt.Insert(cidr, nil)

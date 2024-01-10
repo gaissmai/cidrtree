@@ -44,7 +44,7 @@ var routes = makeRoutes(routesStr)
 func makeRoutes(rs []routeStr) []route {
 	var routes []route
 	for _, s := range rs {
-		routes = append(routes, route{prfx(s.cidr), addr(s.nextHop)})
+		routes = append(routes, route{mustPfx(s.cidr), mustAddr(s.nextHop)})
 	}
 	return routes
 }
@@ -92,7 +92,7 @@ func TestZeroValue(t *testing.T) {
 
 	var zeroIP netip.Addr
 	var zeroCIDR netip.Prefix
-	var zeroTable cidrtree.Table
+	var zeroTable cidrtree.Table[any]
 
 	if zeroTable.String() != "" {
 		t.Errorf("String() = %v, want \"\"", "")
@@ -129,7 +129,7 @@ func TestZeroValue(t *testing.T) {
 
 func TestInsertImmutable(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 
 	for _, route := range routes {
 		rtbl = rtbl.InsertImmutable(route.cidr, route.nextHop)
@@ -142,7 +142,7 @@ func TestInsertImmutable(t *testing.T) {
 
 func TestDupInsert(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
@@ -183,7 +183,7 @@ func TestDupInsert(t *testing.T) {
 
 func TestInsert(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
@@ -197,7 +197,7 @@ func TestInsert(t *testing.T) {
 func TestImmutable(t *testing.T) {
 	t.Parallel()
 
-	rtbl1 := new(cidrtree.Table)
+	rtbl1 := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl1.Insert(route.cidr, route.nextHop)
 	}
@@ -235,7 +235,7 @@ func TestImmutable(t *testing.T) {
 }
 
 func TestMutable(t *testing.T) {
-	rtbl1 := new(cidrtree.Table)
+	rtbl1 := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl1.Insert(route.cidr, route.nextHop)
 	}
@@ -253,13 +253,13 @@ func TestMutable(t *testing.T) {
 	}
 
 	// reset table1, table2
-	rtbl1 = new(cidrtree.Table)
+	rtbl1 = new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl1.Insert(route.cidr, route.nextHop)
 	}
 	rtbl2 = rtbl1.Clone()
 
-	probe = route{cidr: prfx("1.2.3.4/17")}
+	probe = route{cidr: mustPfx("1.2.3.4/17")}
 	rtbl1.Insert(probe.cidr, probe.nextHop)
 
 	if reflect.DeepEqual(rtbl1, rtbl2) {
@@ -274,7 +274,7 @@ func TestMutable(t *testing.T) {
 func TestDeleteImmutable(t *testing.T) {
 	t.Parallel()
 
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -299,7 +299,7 @@ func TestDeleteImmutable(t *testing.T) {
 func TestDelete(t *testing.T) {
 	t.Parallel()
 
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -322,7 +322,7 @@ func TestDelete(t *testing.T) {
 func TestLookupIP(t *testing.T) {
 	t.Parallel()
 
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -334,39 +334,39 @@ func TestLookupIP(t *testing.T) {
 		wantOK bool
 	}{
 		{
-			ip:     addr("10.0.1.17"),
-			want:   prfx("10.0.1.0/24"),
-			want2:  addr("203.0.113.0"),
+			ip:     mustAddr("10.0.1.17"),
+			want:   mustPfx("10.0.1.0/24"),
+			want2:  mustAddr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     addr("10.2.3.4"),
-			want:   prfx("10.0.0.0/8"),
-			want2:  addr("203.0.113.0"),
+			ip:     mustAddr("10.2.3.4"),
+			want:   mustPfx("10.0.0.0/8"),
+			want2:  mustAddr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     addr("12.0.0.0"),
+			ip:     mustAddr("12.0.0.0"),
 			want:   netip.Prefix{},
 			want2:  netip.Addr{},
 			wantOK: false,
 		},
 		{
-			ip:     addr("127.0.0.255"),
-			want:   prfx("127.0.0.0/8"),
-			want2:  addr("203.0.113.0"),
+			ip:     mustAddr("127.0.0.255"),
+			want:   mustPfx("127.0.0.0/8"),
+			want2:  mustAddr("203.0.113.0"),
 			wantOK: true,
 		},
 		{
-			ip:     addr("::2"),
-			want:   prfx("::/0"),
-			want2:  addr("2001:db8::1"),
+			ip:     mustAddr("::2"),
+			want:   mustPfx("::/0"),
+			want2:  mustAddr("2001:db8::1"),
 			wantOK: true,
 		},
 		{
-			ip:     addr("2001:db8:affe:cafe::dead:beef"),
-			want:   prfx("2001:db8::/32"),
-			want2:  addr("2001:db8::1"),
+			ip:     mustAddr("2001:db8:affe:cafe::dead:beef"),
+			want:   mustPfx("2001:db8::/32"),
+			want2:  mustAddr("2001:db8::1"),
 			wantOK: true,
 		},
 	}
@@ -377,12 +377,12 @@ func TestLookupIP(t *testing.T) {
 		}
 	}
 
-	prefix := prfx("10.0.0.0/8")
+	prefix := mustPfx("10.0.0.0/8")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	ip := addr("1.2.3.4")
+	ip := mustAddr("1.2.3.4")
 	want := netip.Prefix{}
 	want2 := any(nil)
 
@@ -390,12 +390,12 @@ func TestLookupIP(t *testing.T) {
 		t.Errorf("Lookup(%v) = %v, %v, %v, want %v, %v, %v", ip, got, got2, ok, want, want2, false)
 	}
 
-	prefix = prfx("::/0")
+	prefix = mustPfx("::/0")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	ip = addr("::2")
+	ip = mustAddr("::2")
 	want = netip.Prefix{}
 	want2 = any(nil)
 
@@ -406,7 +406,7 @@ func TestLookupIP(t *testing.T) {
 	// ##########################################
 
 	tc := shuffleFullTable(100_000)
-	rtbl2 := new(cidrtree.Table)
+	rtbl2 := new(cidrtree.Table[any])
 	for _, cidr := range tc {
 		rtbl2.Insert(cidr, nil)
 	}
@@ -428,7 +428,7 @@ func TestLookupIP(t *testing.T) {
 func TestLookupCIDR(t *testing.T) {
 	t.Parallel()
 
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -440,39 +440,39 @@ func TestLookupCIDR(t *testing.T) {
 		wantOK    bool
 	}{
 		{
-			cidr:      prfx("10.0.1.0/29"),
-			wantCIDR:  prfx("10.0.1.0/24"),
-			wantValue: addr("203.0.113.0"),
+			cidr:      mustPfx("10.0.1.0/29"),
+			wantCIDR:  mustPfx("10.0.1.0/24"),
+			wantValue: mustAddr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      prfx("10.2.0.0/16"),
-			wantCIDR:  prfx("10.0.0.0/8"),
-			wantValue: addr("203.0.113.0"),
+			cidr:      mustPfx("10.2.0.0/16"),
+			wantCIDR:  mustPfx("10.0.0.0/8"),
+			wantValue: mustAddr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      prfx("12.0.0.0/8"),
+			cidr:      mustPfx("12.0.0.0/8"),
 			wantCIDR:  netip.Prefix{},
 			wantValue: netip.Addr{},
 			wantOK:    false,
 		},
 		{
-			cidr:      prfx("127.0.0.2/32"),
-			wantCIDR:  prfx("127.0.0.0/8"),
-			wantValue: addr("203.0.113.0"),
+			cidr:      mustPfx("127.0.0.2/32"),
+			wantCIDR:  mustPfx("127.0.0.0/8"),
+			wantValue: mustAddr("203.0.113.0"),
 			wantOK:    true,
 		},
 		{
-			cidr:      prfx("::2/96"),
-			wantCIDR:  prfx("::/0"),
-			wantValue: addr("2001:db8::1"),
+			cidr:      mustPfx("::2/96"),
+			wantCIDR:  mustPfx("::/0"),
+			wantValue: mustAddr("2001:db8::1"),
 			wantOK:    true,
 		},
 		{
-			cidr:      prfx("2001:db8:affe:cafe:dead:beef::/96"),
-			wantCIDR:  prfx("2001:db8::/32"),
-			wantValue: addr("2001:db8::1"),
+			cidr:      mustPfx("2001:db8:affe:cafe:dead:beef::/96"),
+			wantCIDR:  mustPfx("2001:db8::/32"),
+			wantValue: mustAddr("2001:db8::1"),
 			wantOK:    true,
 		},
 	}
@@ -483,12 +483,12 @@ func TestLookupCIDR(t *testing.T) {
 		}
 	}
 
-	prefix := prfx("10.0.0.0/8")
+	prefix := mustPfx("10.0.0.0/8")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	cidr := prfx("10.2.0.0/16")
+	cidr := mustPfx("10.2.0.0/16")
 	wantCIDR := netip.Prefix{}
 	wantValue := any(nil)
 
@@ -496,12 +496,12 @@ func TestLookupCIDR(t *testing.T) {
 		t.Errorf("LookupCIDR(%v) = %v, %v, %v, want %v, %v, %v", cidr, got, got2, ok, wantCIDR, wantValue, false)
 	}
 
-	prefix = prfx("::/0")
+	prefix = mustPfx("::/0")
 	if ok := rtbl.Delete(prefix); !ok {
 		t.Errorf("Delete(%v) = %v, want %v", prefix, ok, true)
 	}
 
-	cidr = prfx("::2/96")
+	cidr = mustPfx("::2/96")
 	wantCIDR = netip.Prefix{}
 	wantValue = any(nil)
 
@@ -513,7 +513,7 @@ func TestLookupCIDR(t *testing.T) {
 
 	tc := shuffleFullTable(100_000)
 
-	rtbl2 := new(cidrtree.Table)
+	rtbl2 := new(cidrtree.Table[any])
 	for _, cidr := range tc {
 		rtbl2.Insert(cidr, nil)
 	}
@@ -526,8 +526,8 @@ func TestLookupCIDR(t *testing.T) {
 
 func TestUnion(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
-	rtbl2 := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
+	rtbl2 := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 		rtbl2.Insert(route.cidr, route.nextHop)
@@ -539,7 +539,7 @@ func TestUnion(t *testing.T) {
 	}
 
 	clone := rtbl.Clone()
-	rtbl.Union(cidrtree.Table{})
+	rtbl.Union(cidrtree.Table[any]{})
 	if !reflect.DeepEqual(rtbl, clone) {
 		t.Fatal("UnionMutable with zero value changed original")
 	}
@@ -552,8 +552,8 @@ func TestUnion(t *testing.T) {
 
 func TestUnionDupe(t *testing.T) {
 	t.Parallel()
-	rtbl1 := new(cidrtree.Table)
-	rtbl2 := new(cidrtree.Table)
+	rtbl1 := new(cidrtree.Table[any])
+	rtbl2 := new(cidrtree.Table[any])
 	for _, cidr := range shuffleFullTable(100_000) {
 		rtbl1.Insert(cidr, 1)
 		// dupe cidr with different value
@@ -582,7 +582,7 @@ func TestUnionDupe(t *testing.T) {
 
 func TestFprint(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -599,7 +599,7 @@ func TestFprint(t *testing.T) {
 
 func TestWalk(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -618,7 +618,7 @@ func TestWalk(t *testing.T) {
 
 func TestWalkStartStop(t *testing.T) {
 	t.Parallel()
-	rtbl := new(cidrtree.Table)
+	rtbl := new(cidrtree.Table[any])
 	for _, route := range routes {
 		rtbl.Insert(route.cidr, route.nextHop)
 	}
@@ -629,7 +629,7 @@ func TestWalkStartStop(t *testing.T) {
 			// skip
 			return true
 		}
-		if pfx == prfx("fc00::/7") {
+		if pfx == mustPfx("fc00::/7") {
 			// stop
 			return false
 		}

@@ -7,7 +7,7 @@ import (
 )
 
 // String returns a hierarchical tree diagram of the ordered CIDRs as string, just a wrapper for [Tree.Fprint].
-func (t Table) String() string {
+func (t Table[V]) String() string {
 	w := new(strings.Builder)
 	_ = t.Fprint(w)
 	return w.String()
@@ -17,7 +17,7 @@ func (t Table) String() string {
 //
 // The order from top to bottom is in ascending order of the start address
 // and the subtree structure is determined by the CIDRs coverage.
-func (t Table) Fprint(w io.Writer) error {
+func (t Table[V]) Fprint(w io.Writer) error {
 	if err := t.root4.fprint(w); err != nil {
 		return err
 	}
@@ -27,16 +27,16 @@ func (t Table) Fprint(w io.Writer) error {
 	return nil
 }
 
-func (n *node) fprint(w io.Writer) error {
+func (n *node[V]) fprint(w io.Writer) error {
 	if n == nil {
 		return nil
 	}
 
 	// pcm = parent-child-mapping
-	var pcm parentChildsMap
+	var pcm parentChildsMap[V]
 
 	// init map
-	pcm.pcMap = make(map[*node][]*node)
+	pcm.pcMap = make(map[*node[V]][]*node[V])
 
 	pcm = n.buildParentChildsMap(pcm)
 
@@ -50,11 +50,11 @@ func (n *node) fprint(w io.Writer) error {
 	}
 
 	// start recursion with root and empty padding
-	var root *node
+	var root *node[V]
 	return root.walkAndStringify(w, pcm, "")
 }
 
-func (n *node) walkAndStringify(w io.Writer, pcm parentChildsMap, pad string) error {
+func (n *node[V]) walkAndStringify(w io.Writer, pcm parentChildsMap[V], pad string) error {
 	// the prefix (pad + glyphe) is already printed on the line on upper level
 	if n != nil {
 		if _, err := fmt.Fprintf(w, "%v (%v)\n", n.cidr, n.value); err != nil {
@@ -92,13 +92,13 @@ func (n *node) walkAndStringify(w io.Writer, pcm parentChildsMap, pad string) er
 // parentChildsMap, needed for hierarchical tree printing, this is not BST printing!
 //
 // CIDR tree, parent->childs relation printed. A parent CIDR covers a child CIDR.
-type parentChildsMap struct {
-	pcMap map[*node][]*node // parent -> []child map
-	stack []*node           // just needed for the algo
+type parentChildsMap[T any] struct {
+	pcMap map[*node[T]][]*node[T] // parent -> []child map
+	stack []*node[T]              // just needed for the algo
 }
 
 // buildParentChildsMap, in-order traversal
-func (n *node) buildParentChildsMap(pcm parentChildsMap) parentChildsMap {
+func (n *node[V]) buildParentChildsMap(pcm parentChildsMap[V]) parentChildsMap[V] {
 	if n == nil {
 		return pcm
 	}
@@ -114,7 +114,7 @@ func (n *node) buildParentChildsMap(pcm parentChildsMap) parentChildsMap {
 }
 
 // pcmForNode, find parent in stack, remove cidrs from stack, put this cidr on stack.
-func (n *node) pcmForNode(pcm parentChildsMap) parentChildsMap {
+func (n *node[V]) pcmForNode(pcm parentChildsMap[V]) parentChildsMap[V] {
 	// if this cidr is covered by a prev cidr on stack
 	for j := len(pcm.stack) - 1; j >= 0; j-- {
 		that := pcm.stack[j]

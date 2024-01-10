@@ -10,7 +10,7 @@ import (
 // fprintBST writes a horizontal tree diagram of the binary search tree (BST) to w.
 //
 // Note: This is for debugging purposes only.
-func (t Table) fprintBST(w io.Writer) error {
+func (t Table[V]) fprintBST(w io.Writer) error {
 	if t.root4 != nil {
 		if _, err := fmt.Fprint(w, "R "); err != nil {
 			return err
@@ -33,7 +33,7 @@ func (t Table) fprintBST(w io.Writer) error {
 }
 
 // fprintBST recursive helper.
-func (n *node) fprintBST(w io.Writer, pad string) error {
+func (n *node[V]) fprintBST(w io.Writer, pad string) error {
 	// stringify this node
 	_, err := fmt.Fprintf(w, "%v [prio:%.4g] [subtree maxUpper: %v]\n", n.cidr, float64(n.prio)/math.MaxUint64, n.maxUpper.cidr)
 	if err != nil {
@@ -80,7 +80,7 @@ func (n *node) fprintBST(w io.Writer, pad string) error {
 // If the skip function is not nil, a true return value defines which nodes must be skipped in the statistics.
 //
 // Note: This is for debugging and testing purposes only during development.
-func (t Table) statistics(skip func(netip.Prefix, any, int) bool) (size int, maxDepth int, average, deviation float64) {
+func (t Table[V]) statistics(skip func(netip.Prefix, any, int) bool) (size int, maxDepth int, average, deviation float64) {
 	// key is depth, value is the sum of nodes with this depth
 	depths := make(map[int]int)
 
@@ -120,7 +120,7 @@ func (t Table) statistics(skip func(netip.Prefix, any, int) bool) (size int, max
 }
 
 // walkWithDepth in ascending prefix order.
-func (n *node) walkWithDepth(cb func(netip.Prefix, any, int) bool, depth int) bool {
+func (n *node[V]) walkWithDepth(cb func(netip.Prefix, any, int) bool, depth int) bool {
 	if n == nil {
 		return true
 	}
