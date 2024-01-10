@@ -6,9 +6,9 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## !!! ATTENTION, API HAS CHANGED
+## !!! ATTENTION
 
-The API has changed from v0.3.0 to v0.4.0.
+API currently not stable!
 
 ## Overview
 
