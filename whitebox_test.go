@@ -72,6 +72,14 @@ func TestStatisticsFullTableVerbose(t *testing.T) {
 	t.Logf("FullTable:   size: %10d, maxDepth: %4d, average: %3.2f, deviation: %3.2f", size, maxDepth, average, deviation)
 }
 
+func TestStringFullTableVerbose(t *testing.T) {
+	rtbl := new(Table[any])
+	for _, cidr := range fullTable {
+		rtbl.Insert(cidr, nil)
+	}
+	t.Log(rtbl.String())
+}
+
 func TestLPMRandomVerbose(t *testing.T) {
 	var size int
 	var depth int
