@@ -6,9 +6,9 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## !!! ATTENTION
+## ATTENTION
 
-API is currently not stable!
+This package is frozen, please migrate to the even better package [BART - BAlanced Routing Table](https://github.com/gaissmai/bart) 
 
 ## Overview
 
